@@ -25,25 +25,21 @@ enum RoutingResult {
 };
 typedef uint32_t RoutingResult;
 
-typedef struct Grid Grid;
+typedef struct Graph Graph;
 
 typedef struct Point {
     int32_t x;
     int32_t y;
 } Point;
 
-typedef struct Rect {
-    struct Point min;
-    struct Point max;
-} Rect;
-
-typedef struct PathEndpoints {
+typedef struct PathDef {
+    uint32_t net_id;
     struct Point start;
     struct Point end;
-} PathEndpoints;
+} PathDef;
 
 typedef struct Vertex {
-    uint32_t id;
+    uint32_t net_id;
     float x;
     float y;
 } Vertex;
@@ -55,17 +51,19 @@ typedef struct VertexBuffer {
 
 ROUTING_MUST_USE RoutingResult init_thread_pool(size_t *thread_count);
 
-ROUTING_MUST_USE RoutingResult grid_new(struct Grid **grid);
+ROUTING_MUST_USE
+RoutingResult graph_build(const struct Point *anchor_points,
+                          size_t anchor_point_count,
+                          bool (*have_sightline)(struct Point, struct Point),
+                          struct Graph **graph);
 
-ROUTING_MUST_USE RoutingResult grid_free(struct Grid *grid);
-
-ROUTING_MUST_USE RoutingResult grid_fill(struct Grid *grid, struct Rect rect);
+ROUTING_MUST_USE RoutingResult graph_free(struct Graph *graph);
 
 ROUTING_MUST_USE
-RoutingResult grid_find_paths(const struct Grid *grid,
-                              const struct PathEndpoints *paths,
-                              size_t path_count,
-                              struct VertexBuffer *vertex_buffers,
-                              size_t vertex_buffer_capacity);
+RoutingResult graph_find_paths(const struct Graph *graph,
+                               const struct PathDef *paths,
+                               size_t path_count,
+                               struct VertexBuffer *vertex_buffers,
+                               size_t vertex_buffer_capacity);
 
 #endif /* ROUTING_H */

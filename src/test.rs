@@ -1,33 +1,83 @@
-mod grid;
-mod pathfinding;
-
 use crate::*;
 
-const fn rect(min_x: i32, min_y: i32, max_x: i32, max_y: i32) -> Rect {
-    Rect {
-        min: Point { x: min_x, y: min_y },
-        max: Point { x: max_x, y: max_y },
-    }
+const POINTS: &[Point] = &[
+    Point { x: 0, y: 0 },
+    Point { x: 1, y: 0 },
+    Point { x: 2, y: 0 },
+    Point { x: 3, y: 0 },
+    Point { x: 4, y: 0 },
+    Point { x: 0, y: 0 },
+    Point { x: 0, y: 1 },
+    Point { x: 0, y: 2 },
+    Point { x: 0, y: 3 },
+    Point { x: 0, y: 4 },
+];
+
+#[test]
+fn straight() {
+    let mut graph = Graph::build(POINTS, |_, _| true);
+    let mut path = Vec::new();
+
+    assert!(graph.find_path(
+        &mut PriorityQueue::default(),
+        &mut path,
+        Point { x: 0, y: 2 },
+        Point { x: 4, y: 2 },
+    ));
+
+    assert_eq!(path, [Point { x: 0, y: 2 }, Point { x: 4, y: 2 }]);
 }
 
-const fn chunk(repr: &[&[u8; CHUNK_SIZE]; CHUNK_SIZE]) -> Chunk {
-    let mut chunk = Chunk::EMPTY;
+#[test]
+fn one_bend() {
+    let mut graph = Graph::build(POINTS, |_, _| true);
+    let mut path = Vec::new();
 
-    let mut y = 0;
-    while y < CHUNK_SIZE {
-        let mut x = 0;
-        while x < CHUNK_SIZE {
-            match repr[y][x] {
-                b'#' => chunk.rows[y] |= 1 << x,
-                b'.' => (),
-                _ => panic!("illegal char"),
-            }
+    assert!(graph.find_path(
+        &mut PriorityQueue::default(),
+        &mut path,
+        Point { x: 0, y: 0 },
+        Point { x: 4, y: 4 },
+    ));
 
-            x += 1;
-        }
+    assert_eq!(
+        path,
+        [
+            Point { x: 0, y: 0 },
+            Point { x: 0, y: 4 },
+            Point { x: 4, y: 4 },
+        ],
+    );
+}
 
-        y += 1;
-    }
+#[test]
+fn two_bends() {
+    const EXCLUDE_EDGES: &[(Point, Point)] = &[
+        (Point { x: 3, y: 0 }, Point { x: 4, y: 0 }),
+        (Point { x: 3, y: 1 }, Point { x: 4, y: 1 }),
+        (Point { x: 3, y: 2 }, Point { x: 4, y: 2 }),
+        (Point { x: 3, y: 3 }, Point { x: 4, y: 3 }),
+    ];
 
-    chunk
+    let mut graph = Graph::build(POINTS, |a, b| {
+        !EXCLUDE_EDGES.contains(&(a, b)) && !EXCLUDE_EDGES.contains(&(b, a))
+    });
+    let mut path = Vec::new();
+
+    assert!(graph.find_path(
+        &mut PriorityQueue::default(),
+        &mut path,
+        Point { x: 0, y: 0 },
+        Point { x: 4, y: 0 },
+    ));
+
+    assert_eq!(
+        path,
+        [
+            Point { x: 0, y: 0 },
+            Point { x: 0, y: 4 },
+            Point { x: 4, y: 4 },
+            Point { x: 4, y: 0 },
+        ],
+    );
 }
