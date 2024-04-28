@@ -3,9 +3,27 @@
 #[cfg(test)]
 mod test;
 
+use rayon::prelude::*;
+use std::cell::RefCell;
+use std::cmp::Reverse;
 use std::ops::{Index, IndexMut};
 
+type HashMap<K, V> = ahash::AHashMap<K, V>;
 type PriorityQueue<I, P> = priority_queue::PriorityQueue<I, P, ahash::RandomState>;
+
+#[repr(transparent)]
+struct SyncPtr<T: ?Sized>(*mut T);
+
+impl<T: ?Sized> Clone for SyncPtr<T> {
+    #[inline]
+    fn clone(&self) -> Self {
+        Self(self.0)
+    }
+}
+
+impl<T: ?Sized> Copy for SyncPtr<T> {}
+unsafe impl<T: ?Sized> Send for SyncPtr<T> {}
+unsafe impl<T: ?Sized> Sync for SyncPtr<T> {}
 
 const INVALID_INDEX: u32 = u32::MAX;
 
@@ -17,8 +35,39 @@ struct Point {
 }
 
 impl Point {
+    #[inline]
     fn manhatten_distance_to(self, other: Self) -> u32 {
         self.x.abs_diff(other.x) + self.y.abs_diff(other.y)
+    }
+}
+
+#[derive(Debug, Clone, Copy)]
+#[repr(C)]
+struct BoundingBox {
+    center: Point,
+    half_width: u16,
+    half_height: u16,
+}
+
+impl BoundingBox {
+    #[inline]
+    fn min_x(self) -> i32 {
+        self.center.x - (self.half_width as i32)
+    }
+
+    #[inline]
+    fn max_x(self) -> i32 {
+        self.center.x + (self.half_width as i32)
+    }
+
+    #[inline]
+    fn min_y(self) -> i32 {
+        self.center.y - (self.half_height as i32)
+    }
+
+    #[inline]
+    fn max_y(self) -> i32 {
+        self.center.y + (self.half_height as i32)
     }
 }
 
@@ -32,15 +81,6 @@ enum Direction {
 
 impl Direction {
     const ALL: [Self; 4] = [Self::PosX, Self::NegX, Self::PosY, Self::NegY];
-
-    fn opposite(self) -> Self {
-        match self {
-            Direction::PosX => Direction::NegX,
-            Direction::NegX => Direction::PosX,
-            Direction::PosY => Direction::NegY,
-            Direction::NegY => Direction::PosY,
-        }
-    }
 }
 
 #[derive(Clone)]
@@ -48,7 +88,8 @@ impl Direction {
 struct NeighborList([u32; 4]);
 
 impl NeighborList {
-    fn new() -> Self {
+    #[inline]
+    const fn new() -> Self {
         Self([INVALID_INDEX; 4])
     }
 
@@ -66,6 +107,7 @@ impl NeighborList {
 impl Index<Direction> for NeighborList {
     type Output = u32;
 
+    #[inline]
     fn index(&self, index: Direction) -> &Self::Output {
         match index {
             Direction::PosX => &self.0[0],
@@ -77,6 +119,7 @@ impl Index<Direction> for NeighborList {
 }
 
 impl IndexMut<Direction> for NeighborList {
+    #[inline]
     fn index_mut(&mut self, index: Direction) -> &mut Self::Output {
         match index {
             Direction::PosX => &mut self.0[0],
@@ -91,107 +134,160 @@ impl IndexMut<Direction> for NeighborList {
 struct Node {
     point: Point,
     neighbors: NeighborList,
-    g_score: u32,
-    predecessor: u32,
 }
 
-impl Node {
-    fn new(point: Point) -> Self {
-        Self {
-            point,
-            neighbors: NeighborList::new(),
-            g_score: u32::MAX,
-            predecessor: INVALID_INDEX,
-        }
-    }
-
-    fn reset(&mut self) {
-        self.g_score = u32::MAX;
-        self.predecessor = INVALID_INDEX;
-    }
-}
-
-#[derive(Clone)]
 #[repr(transparent)]
 struct NodeList(Vec<Node>);
+
+impl NodeList {
+    #[inline]
+    fn new() -> Self {
+        Self(Vec::new())
+    }
+
+    #[inline]
+    fn resize(&mut self, new_len: u32) {
+        const INIT: Node = Node {
+            point: Point { x: 0, y: 0 },
+            neighbors: NeighborList::new(),
+        };
+
+        self.0.clear();
+        self.0.resize(new_len as usize, INIT);
+    }
+}
 
 impl Index<u32> for NodeList {
     type Output = Node;
 
+    #[inline]
     fn index(&self, index: u32) -> &Self::Output {
         &self.0[index as usize]
     }
 }
 
 impl IndexMut<u32> for NodeList {
+    #[inline]
     fn index_mut(&mut self, index: u32) -> &mut Self::Output {
         &mut self.0[index as usize]
     }
 }
 
-#[derive(Clone)]
 struct Graph {
+    x_coords: Vec<i32>,
+    y_coords: Vec<i32>,
     nodes: NodeList,
 }
 
 impl Graph {
-    fn build(anchor_points: &[Point], have_sightline: impl Fn(Point, Point) -> bool) -> Self {
-        let mut x_coords: Vec<_> = anchor_points.iter().map(|&Point { x, .. }| x).collect();
-        x_coords.sort_unstable();
-        x_coords.dedup();
-
-        let mut y_coords: Vec<_> = anchor_points.iter().map(|&Point { y, .. }| y).collect();
-        y_coords.sort_unstable();
-        y_coords.dedup();
-
-        let node_count = x_coords.len() * y_coords.len();
-        assert!(node_count <= (INVALID_INDEX as usize));
-        let mut nodes = Vec::with_capacity(node_count);
-
-        for &y in y_coords.iter() {
-            let mut prev: Option<usize> = None;
-            for &x in x_coords.iter() {
-                let index = nodes.len();
-                let point = Point { x, y };
-                nodes.push(Node::new(point));
-
-                if let Some(prev) = prev {
-                    if have_sightline(point, nodes[prev].point) {
-                        nodes[prev].neighbors[Direction::PosX] = index as u32;
-                        nodes[index].neighbors[Direction::NegX] = prev as u32;
-                    }
-                }
-
-                prev = Some(index);
-            }
-        }
-
-        for (xi, &x) in x_coords.iter().enumerate() {
-            let mut prev: Option<usize> = None;
-            for (yi, &y) in y_coords.iter().enumerate() {
-                let index = yi * x_coords.len() + xi;
-                let point = Point { x, y };
-
-                if let Some(prev) = prev {
-                    if have_sightline(point, nodes[prev].point) {
-                        nodes[prev].neighbors[Direction::PosY] = index as u32;
-                        nodes[index].neighbors[Direction::NegY] = prev as u32;
-                    }
-                }
-
-                prev = Some(index);
-            }
-        }
-
+    fn new() -> Self {
         Self {
-            nodes: NodeList(nodes),
+            x_coords: Vec::new(),
+            y_coords: Vec::new(),
+            nodes: NodeList::new(),
         }
     }
 
-    fn reset(&mut self) {
-        for node in self.nodes.0.iter_mut() {
-            node.reset();
-        }
+    fn build(&mut self, anchor_points: &[Point], bounding_boxes: &[BoundingBox]) {
+        let have_horizontal_sightline = |y: i32, x1: i32, x2: i32| -> bool {
+            assert!(x1 < x2);
+
+            for &bb in bounding_boxes {
+                if (y < bb.min_y()) || (y > bb.max_y()) {
+                    continue;
+                }
+
+                if (x2 < bb.min_x()) || (x1 > bb.max_x()) {
+                    continue;
+                }
+
+                return false;
+            }
+
+            true
+        };
+
+        let have_vertical_sightline = |x: i32, y1: i32, y2: i32| -> bool {
+            assert!(y1 < y2);
+
+            for &bb in bounding_boxes {
+                if (x < bb.min_x()) || (x > bb.max_x()) {
+                    continue;
+                }
+
+                if (y2 < bb.min_y()) || (y1 > bb.max_y()) {
+                    continue;
+                }
+
+                return false;
+            }
+
+            true
+        };
+
+        self.x_coords.clear();
+        self.x_coords.reserve(anchor_points.len());
+        self.x_coords
+            .extend(anchor_points.iter().map(|&Point { x, .. }| x));
+        self.x_coords.par_sort_unstable();
+        self.x_coords.dedup();
+
+        self.y_coords.clear();
+        self.y_coords.reserve(anchor_points.len());
+        self.y_coords
+            .extend(anchor_points.iter().map(|&Point { y, .. }| y));
+        self.y_coords.par_sort_unstable();
+        self.y_coords.dedup();
+
+        let node_count: u32 = (self.x_coords.len() * self.y_coords.len())
+            .try_into()
+            .expect("too many nodes");
+        self.nodes.resize(node_count);
+
+        let nodes = SyncPtr((&mut self.nodes) as *mut NodeList);
+
+        self.y_coords.par_iter().enumerate().for_each(|(yi, &y)| {
+            let nodes = nodes;
+
+            let mut prev: Option<u32> = None;
+            for (xi, &x) in self.x_coords.iter().enumerate() {
+                let index = (yi * self.x_coords.len() + xi) as u32;
+                unsafe {
+                    (*nodes.0)[index].point = Point { x, y };
+                }
+
+                if let Some(prev) = prev {
+                    if have_horizontal_sightline(y, self.nodes[prev].point.x, x) {
+                        unsafe {
+                            (*nodes.0)[prev].neighbors[Direction::PosX] = index;
+                            (*nodes.0)[index].neighbors[Direction::NegX] = prev;
+                        }
+                    }
+                }
+
+                prev = Some(index);
+            }
+        });
+
+        self.x_coords.par_iter().enumerate().for_each(|(xi, &x)| {
+            let nodes = nodes;
+
+            let mut prev: Option<u32> = None;
+            for (yi, &y) in self.y_coords.iter().enumerate() {
+                let index = (yi * self.x_coords.len() + xi) as u32;
+
+                if let Some(prev) = prev {
+                    if have_vertical_sightline(x, self.nodes[prev].point.y, y) {
+                        unsafe {
+                            (*nodes.0)[prev].neighbors[Direction::PosY] = index;
+                            (*nodes.0)[index].neighbors[Direction::NegY] = prev;
+                        }
+                    }
+                }
+
+                prev = Some(index);
+            }
+        });
     }
 
     fn find_node(&self, point: Point) -> Option<u32> {
@@ -205,27 +301,35 @@ impl Graph {
             .ok()
             .map(|index| index as u32)
     }
+}
 
-    fn build_path(&self, path: &mut Vec<Point>, start_index: u32) {
-        path.push(self.nodes[start_index].point);
+#[derive(Default)]
+struct PathFinder {
+    g_score: HashMap<u32, u32>,
+    predecessor: HashMap<u32, u32>,
+    open_queue: PriorityQueue<u32, Reverse<u32>>,
+}
+
+impl PathFinder {
+    fn build_path(&self, graph: &Graph, path: &mut Vec<Point>, start_index: u32) {
+        path.push(graph.nodes[start_index].point);
 
         let mut dir: Option<Direction> = None;
         let mut current_index = start_index;
         loop {
-            let pred_index = self.nodes[current_index].predecessor;
-            if pred_index == INVALID_INDEX {
+            let Some(&pred_index) = self.predecessor.get(&current_index) else {
                 break;
-            }
+            };
 
-            let pred_dir = self.nodes[current_index]
+            let pred_dir = graph.nodes[current_index]
                 .neighbors
                 .find(pred_index)
                 .expect("invalid predecessor");
 
             if Some(pred_dir) == dir {
-                *path.last_mut().unwrap() = self.nodes[pred_index].point;
+                *path.last_mut().unwrap() = graph.nodes[pred_index].point;
             } else {
-                path.push(self.nodes[pred_index].point);
+                path.push(graph.nodes[pred_index].point);
                 dir = Some(pred_dir);
             }
 
@@ -235,69 +339,61 @@ impl Graph {
 
     fn find_path(
         &mut self,
-        open_queue: &mut PriorityQueue<u32, std::cmp::Reverse<u32>>,
+        graph: &Graph,
         path: &mut Vec<Point>,
         start: Point,
         end: Point,
     ) -> bool {
-        self.reset();
+        self.g_score.clear();
+        self.predecessor.clear();
+        self.open_queue.clear();
 
-        let start_index = self.find_node(start).expect("invalid start node");
-        let end_index = self.find_node(end).expect("invalid end node");
+        let start_index = graph.find_node(start).expect("invalid start node");
+        let end_index = graph.find_node(end).expect("invalid end node");
 
-        macro_rules! start {
-            () => {
-                self.nodes[start_index]
-            };
-        }
+        self.g_score.insert(end_index, 0);
+        self.open_queue.push(end_index, Reverse(0));
 
-        macro_rules! end {
-            () => {
-                self.nodes[end_index]
-            };
-        }
-
-        end!().g_score = 0;
-        open_queue.push(end_index, std::cmp::Reverse(0));
-
-        while let Some((current_index, _)) = open_queue.pop() {
+        while let Some((current_index, _)) = self.open_queue.pop() {
             if current_index == start_index {
-                self.build_path(path, start_index);
+                self.build_path(graph, path, start_index);
                 return true;
             }
 
-            macro_rules! current {
-                () => {
-                    self.nodes[current_index]
-                };
-            }
-
-            let pred_index = current!().predecessor;
-            let pred_dir = current!().neighbors.find(pred_index);
-            let straight_dir = pred_dir.map(Direction::opposite);
+            let straight_dir = self
+                .predecessor
+                .get(&current_index)
+                .copied()
+                .map(|pred_index| {
+                    graph.nodes[pred_index]
+                        .neighbors
+                        .find(current_index)
+                        .expect("invalid predecessor")
+                });
 
             for dir in Direction::ALL {
-                let neighbor_index = current!().neighbors[dir];
+                let neighbor_index = graph.nodes[current_index].neighbors[dir];
                 if neighbor_index == INVALID_INDEX {
                     continue;
                 }
 
-                macro_rules! neighbor {
-                    () => {
-                        self.nodes[neighbor_index]
-                    };
-                }
-
                 let new_g_score =
-                    current!().g_score + if Some(dir) == straight_dir { 1 } else { 2 };
+                    self.g_score[&current_index] + if Some(dir) == straight_dir { 1 } else { 2 };
 
-                if new_g_score < neighbor!().g_score {
-                    neighbor!().g_score = new_g_score;
-                    neighbor!().predecessor = current_index;
+                let update = match self.g_score.get(&neighbor_index) {
+                    Some(&g_score) => new_g_score < g_score,
+                    None => true,
+                };
 
-                    let new_f_score =
-                        new_g_score + neighbor!().point.manhatten_distance_to(start!().point);
-                    open_queue.push(neighbor_index, std::cmp::Reverse(new_f_score));
+                if update {
+                    self.g_score.insert(neighbor_index, new_g_score);
+                    self.predecessor.insert(neighbor_index, current_index);
+
+                    let new_f_score = new_g_score
+                        + graph.nodes[neighbor_index]
+                            .point
+                            .manhatten_distance_to(start);
+                    self.open_queue.push(neighbor_index, Reverse(new_f_score));
                 }
             }
         }
@@ -306,6 +402,11 @@ impl Graph {
     }
 }
 
+thread_local! {
+    static PATH_FINDER: RefCell<PathFinder> = RefCell::new(PathFinder::default());
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 #[repr(u32)]
 enum RoutingResult {
     Success = 0,
@@ -337,26 +438,36 @@ unsafe extern "C" fn init_thread_pool(thread_count: *mut usize) -> RoutingResult
 
 #[no_mangle]
 #[must_use]
-unsafe extern "C" fn graph_build(
-    anchor_points: *const Point,
-    anchor_point_count: usize,
-    have_sightline: Option<unsafe extern "C" fn(Point, Point) -> bool>,
-    graph: *mut *mut Graph,
-) -> RoutingResult {
-    if anchor_points.is_null() || graph.is_null() {
+unsafe extern "C" fn graph_new(graph: *mut *mut Graph) -> RoutingResult {
+    if graph.is_null() {
         return RoutingResult::NullPointerError;
     }
 
-    let Some(have_sightline) = have_sightline else {
-        return RoutingResult::NullPointerError;
-    };
-
-    let anchor_points = unsafe { std::slice::from_raw_parts(anchor_points, anchor_point_count) };
-    let have_sightline = |a, b| unsafe { have_sightline(a, b) };
-    let ptr = Box::into_raw(Box::new(Graph::build(anchor_points, have_sightline)));
+    let ptr = Box::into_raw(Box::new(Graph::new()));
     unsafe {
         graph.write(ptr);
     }
+
+    RoutingResult::Success
+}
+
+#[no_mangle]
+#[must_use]
+unsafe extern "C" fn graph_build(
+    graph: *mut Graph,
+    anchor_points: *const Point,
+    anchor_point_count: usize,
+    bounding_boxes: *const BoundingBox,
+    bounding_box_count: usize,
+) -> RoutingResult {
+    if graph.is_null() || anchor_points.is_null() || bounding_boxes.is_null() {
+        return RoutingResult::NullPointerError;
+    }
+
+    let graph = unsafe { &mut *graph };
+    let anchor_points = unsafe { std::slice::from_raw_parts(anchor_points, anchor_point_count) };
+    let bounding_boxes = unsafe { std::slice::from_raw_parts(bounding_boxes, bounding_box_count) };
+    graph.build(anchor_points, bounding_boxes);
 
     RoutingResult::Success
 }
@@ -374,7 +485,7 @@ unsafe extern "C" fn graph_free(graph: *mut Graph) -> RoutingResult {
     RoutingResult::Success
 }
 
-#[derive(Clone, Copy)]
+#[derive(Debug, Clone, Copy)]
 #[repr(C)]
 struct PathDef {
     net_id: u32,
@@ -382,7 +493,7 @@ struct PathDef {
     end: Point,
 }
 
-#[derive(Clone, Copy)]
+#[derive(Debug, Clone, Copy, PartialEq)]
 #[repr(C)]
 struct Vertex {
     net_id: u32,
@@ -406,14 +517,6 @@ unsafe extern "C" fn graph_find_paths(
     vertex_buffers: *mut VertexBuffer,
     vertex_buffer_capacity: usize,
 ) -> RoutingResult {
-    #[derive(Clone, Copy)]
-    #[repr(transparent)]
-    struct SyncPtr<T: ?Sized>(*mut T);
-
-    unsafe impl<T: ?Sized> Send for SyncPtr<T> {}
-    unsafe impl<T: ?Sized> Sync for SyncPtr<T> {}
-
-    use rayon::prelude::*;
     use std::sync::atomic::{AtomicUsize, Ordering};
 
     if graph.is_null() || paths.is_null() || vertex_buffers.is_null() {
@@ -448,63 +551,63 @@ unsafe extern "C" fn graph_find_paths(
             let vertex_buffer = unsafe { vertex_buffers.0.add(buffer_index) };
             let vertex_buffer = SyncPtr(vertex_buffer);
 
-            (
-                graph.clone(),
-                PriorityQueue::default(),
-                Vec::default(),
-                vertex_buffer,
-            )
+            (Vec::new(), vertex_buffer)
         },
-        |(graph, open_queue, path, vertex_buffer), path_def| {
-            let vertex_buffer = unsafe { &mut *vertex_buffer.0 };
+        |(path, vertex_buffer), path_def| {
+            PATH_FINDER.with_borrow_mut(|path_finder| {
+                let vertex_buffer = unsafe { &mut *vertex_buffer.0 };
 
-            open_queue.clear();
-            path.clear();
+                path.clear();
 
-            if graph.find_path(open_queue, path, path_def.start, path_def.end) {
-                if vertex_buffer_capacity < (vertex_buffer.len + path.len()) {
-                    return Err(RoutingResult::BufferOverflowError);
-                }
+                if path_finder.find_path(graph, path, path_def.start, path_def.end) {
+                    if vertex_buffer_capacity < (vertex_buffer.len + path.len()) {
+                        return Err(RoutingResult::BufferOverflowError);
+                    }
 
-                for (i, point) in path.iter().copied().enumerate() {
+                    for (i, point) in path.iter().copied().enumerate() {
+                        unsafe {
+                            vertex_buffer
+                                .vertices
+                                .add(vertex_buffer.len + i)
+                                .write(Vertex {
+                                    net_id: path_def.net_id,
+                                    x: point.x as f32,
+                                    y: point.y as f32,
+                                });
+                        }
+                    }
+
+                    vertex_buffer.len += path.len();
+                } else {
+                    if vertex_buffer_capacity < (vertex_buffer.len + 2) {
+                        return Err(RoutingResult::BufferOverflowError);
+                    }
+
                     unsafe {
                         vertex_buffer
                             .vertices
-                            .add(vertex_buffer.len + i)
+                            .add(vertex_buffer.len + 0)
                             .write(Vertex {
                                 net_id: path_def.net_id,
-                                x: point.x as f32,
-                                y: point.y as f32,
+                                x: path_def.start.x as f32,
+                                y: path_def.start.y as f32,
+                            });
+
+                        vertex_buffer
+                            .vertices
+                            .add(vertex_buffer.len + 1)
+                            .write(Vertex {
+                                net_id: path_def.net_id,
+                                x: path_def.end.x as f32,
+                                y: path_def.end.y as f32,
                             });
                     }
-                }
-            } else {
-                if vertex_buffer_capacity < (vertex_buffer.len + 2) {
-                    return Err(RoutingResult::BufferOverflowError);
+
+                    vertex_buffer.len += 2;
                 }
 
-                unsafe {
-                    vertex_buffer
-                        .vertices
-                        .add(vertex_buffer.len + 0)
-                        .write(Vertex {
-                            net_id: path_def.net_id,
-                            x: path_def.start.x as f32,
-                            y: path_def.start.y as f32,
-                        });
-
-                    vertex_buffer
-                        .vertices
-                        .add(vertex_buffer.len + 1)
-                        .write(Vertex {
-                            net_id: path_def.net_id,
-                            x: path_def.end.x as f32,
-                            y: path_def.end.y as f32,
-                        });
-                }
-            }
-
-            Ok(())
+                Ok(())
+            })
         },
     );
 

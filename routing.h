@@ -32,6 +32,12 @@ typedef struct Point {
     int32_t y;
 } Point;
 
+typedef struct BoundingBox {
+    struct Point center;
+    uint16_t half_width;
+    uint16_t half_height;
+} BoundingBox;
+
 typedef struct PathDef {
     uint32_t net_id;
     struct Point start;
@@ -51,11 +57,14 @@ typedef struct VertexBuffer {
 
 ROUTING_MUST_USE RoutingResult init_thread_pool(size_t *thread_count);
 
+ROUTING_MUST_USE RoutingResult graph_new(struct Graph **graph);
+
 ROUTING_MUST_USE
-RoutingResult graph_build(const struct Point *anchor_points,
+RoutingResult graph_build(struct Graph *graph,
+                          const struct Point *anchor_points,
                           size_t anchor_point_count,
-                          bool (*have_sightline)(struct Point, struct Point),
-                          struct Graph **graph);
+                          const struct BoundingBox *bounding_boxes,
+                          size_t bounding_box_count);
 
 ROUTING_MUST_USE RoutingResult graph_free(struct Graph *graph);
 
