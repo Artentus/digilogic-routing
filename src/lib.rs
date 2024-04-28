@@ -366,8 +366,11 @@ impl PathFinder {
                     continue;
                 }
 
-                let new_g_score =
-                    self.g_score[&current_index] + if Some(dir) == straight_dir { 1 } else { 2 };
+                let new_g_score = self.g_score[&current_index]
+                    + graph.nodes[current_index]
+                        .point
+                        .manhatten_distance_to(graph.nodes[neighbor_index].point)
+                        * if Some(dir) == straight_dir { 1 } else { 2 };
 
                 let update = match self.g_score.get(&neighbor_index) {
                     Some(&g_score) => new_g_score < g_score,
