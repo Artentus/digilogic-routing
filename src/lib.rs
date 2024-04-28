@@ -130,6 +130,7 @@ impl IndexMut<Direction> for NeighborList {
     }
 }
 
+/// cbindgen:ignore
 #[derive(Clone)]
 struct Node {
     point: Point,

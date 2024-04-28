@@ -34,7 +34,6 @@ typedef struct RT_Node {
 [export]
 prefix = "RT_"
 renaming_overrides_prefixing = false
-exclude = ["RT_Node"]
 
 [export.rename]
 "RoutingResult" = "Result"

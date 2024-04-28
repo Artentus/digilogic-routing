@@ -37,8 +37,6 @@ typedef uint32_t RT_Result;
 
 typedef struct RT_Graph RT_Graph;
 
-typedef struct RT_Node RT_Node;
-
 typedef struct RT_Point {
     int32_t x;
     int32_t y;
@@ -80,7 +78,7 @@ RT_Result RT_graph_build(struct RT_Graph *graph,
 
 RT_MUST_USE
 RT_Result RT_graph_get_nodes(struct RT_Graph *graph,
-                             const struct RT_Node **nodes,
+                             const RT_Node **nodes,
                              size_t *node_count);
 
 RT_MUST_USE RT_Result RT_graph_free(struct RT_Graph *graph);
