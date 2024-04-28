@@ -59,6 +59,8 @@ fn test_impl(
             )
         };
 
+        println!("{vertices:#?}");
+
         for (i, expected) in expected.iter().enumerate() {
             if expected_matches[i] {
                 continue;
@@ -140,8 +142,8 @@ fn two_bends() {
     graph.build(
         POINTS,
         &[BoundingBox {
-            center: Point { x: 3, y: 1 },
-            half_width: 0,
+            center: Point { x: 2, y: 1 },
+            half_width: 1,
             half_height: 2,
         }],
     );

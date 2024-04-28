@@ -130,8 +130,8 @@ impl IndexMut<Direction> for NeighborList {
     }
 }
 
-/// cbindgen:ignore
 #[derive(Clone)]
+#[repr(C)]
 struct Node {
     point: Point,
     neighbors: NeighborList,
@@ -198,7 +198,7 @@ impl Graph {
                     continue;
                 }
 
-                if (x2 < bb.min_x()) || (x1 > bb.max_x()) {
+                if (x2 <= bb.min_x()) || (x1 >= bb.max_x()) {
                     continue;
                 }
 
@@ -216,7 +216,7 @@ impl Graph {
                     continue;
                 }
 
-                if (y2 < bb.min_y()) || (y1 > bb.max_y()) {
+                if (y2 <= bb.min_y()) || (y1 >= bb.max_y()) {
                     continue;
                 }
 
@@ -245,50 +245,38 @@ impl Graph {
             .expect("too many nodes");
         self.nodes.resize(node_count);
 
-        let nodes = SyncPtr((&mut self.nodes) as *mut NodeList);
-
-        self.y_coords.par_iter().enumerate().for_each(|(yi, &y)| {
-            let nodes = nodes;
-
+        for (yi, &y) in self.y_coords.iter().enumerate() {
             let mut prev: Option<u32> = None;
             for (xi, &x) in self.x_coords.iter().enumerate() {
                 let index = (yi * self.x_coords.len() + xi) as u32;
-                unsafe {
-                    (*nodes.0)[index].point = Point { x, y };
-                }
+                self.nodes[index].point = Point { x, y };
 
                 if let Some(prev) = prev {
                     if have_horizontal_sightline(y, self.nodes[prev].point.x, x) {
-                        unsafe {
-                            (*nodes.0)[prev].neighbors[Direction::PosX] = index;
-                            (*nodes.0)[index].neighbors[Direction::NegX] = prev;
-                        }
+                        self.nodes[prev].neighbors[Direction::PosX] = index;
+                        self.nodes[index].neighbors[Direction::NegX] = prev;
                     }
                 }
 
                 prev = Some(index);
             }
-        });
+        }
 
-        self.x_coords.par_iter().enumerate().for_each(|(xi, &x)| {
-            let nodes = nodes;
-
+        for (xi, &x) in self.x_coords.iter().enumerate() {
             let mut prev: Option<u32> = None;
             for (yi, &y) in self.y_coords.iter().enumerate() {
                 let index = (yi * self.x_coords.len() + xi) as u32;
 
                 if let Some(prev) = prev {
                     if have_vertical_sightline(x, self.nodes[prev].point.y, y) {
-                        unsafe {
-                            (*nodes.0)[prev].neighbors[Direction::PosY] = index;
-                            (*nodes.0)[index].neighbors[Direction::NegY] = prev;
-                        }
+                        self.nodes[prev].neighbors[Direction::PosY] = index;
+                        self.nodes[index].neighbors[Direction::NegY] = prev;
                     }
                 }
 
                 prev = Some(index);
             }
-        });
+        }
     }
 
     fn find_node(&self, point: Point) -> Option<u32> {
@@ -476,7 +464,7 @@ unsafe extern "C" fn RT_graph_build(
 #[no_mangle]
 #[must_use]
 unsafe extern "C" fn RT_graph_get_nodes(
-    graph: *mut Graph,
+    graph: *const Graph,
     nodes: *mut *const Node,
     node_count: *mut usize,
 ) -> RoutingResult {
@@ -484,7 +472,7 @@ unsafe extern "C" fn RT_graph_get_nodes(
         return RoutingResult::NullPointerError;
     }
 
-    let graph = unsafe { &mut *graph };
+    let graph = unsafe { &*graph };
     unsafe {
         nodes.write(graph.nodes.0.as_ptr());
         node_count.write(graph.nodes.0.len());

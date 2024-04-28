@@ -21,15 +21,7 @@ after_includes = """
 #define RT_MUST_USE _Check_return_
 #else
 #define RT_MUST_USE
-#endif
-
-typedef struct RT_Node {
-    struct RT_Point point;
-    uint32_t pos_x_neighbor;
-    uint32_t neg_x_neighbor;
-    uint32_t pos_y_neighbor;
-    uint32_t neg_y_neighbor;
-} RT_Node;"""
+#endif"""
 
 [export]
 prefix = "RT_"
