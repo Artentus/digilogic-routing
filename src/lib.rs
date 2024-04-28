@@ -394,10 +394,6 @@ impl PathFinder {
     }
 }
 
-thread_local! {
-    static PATH_FINDER: RefCell<PathFinder> = RefCell::new(PathFinder::default());
-}
-
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 #[repr(u32)]
 enum RoutingResult {
@@ -530,13 +526,11 @@ unsafe extern "C" fn RT_graph_find_paths(
     vertex_buffer_capacity: usize,
 ) -> RoutingResult {
     use std::sync::atomic::{AtomicUsize, Ordering};
+    use thread_local::ThreadLocal;
 
     if graph.is_null() || paths.is_null() || vertex_buffers.is_null() {
         return RoutingResult::NullPointerError;
     }
-
-    let graph = unsafe { &*graph };
-    let paths = unsafe { std::slice::from_raw_parts(paths, path_count) };
 
     {
         let vertex_buffers =
@@ -551,77 +545,92 @@ unsafe extern "C" fn RT_graph_find_paths(
         }
     }
 
+    let graph = unsafe { &*graph };
+    let paths = unsafe { std::slice::from_raw_parts(paths, path_count) };
     let vertex_buffers = SyncPtr(vertex_buffers);
-    let buffer_index = AtomicUsize::new(0);
 
-    let result = paths.par_iter().copied().try_for_each_init(
-        || {
-            let buffer_index = buffer_index.fetch_add(1, Ordering::Relaxed);
+    struct ThreadLocalData {
+        path_finder: PathFinder,
+        path: Vec<Point>,
+        buffer_index: usize,
+    }
+
+    let buffer_index: AtomicUsize = AtomicUsize::new(0);
+    let thread_local_data = ThreadLocal::new();
+
+    let result = paths.par_iter().copied().try_for_each(|path_def| {
+        let thread_local_data = thread_local_data.get_or(|| {
+            let buffer_index = buffer_index.fetch_add(1, Ordering::SeqCst);
             assert!(buffer_index < rayon::current_num_threads());
 
-            let vertex_buffers = vertex_buffers;
-            let vertex_buffer = unsafe { vertex_buffers.0.add(buffer_index) };
-            let vertex_buffer = SyncPtr(vertex_buffer);
-
-            (Vec::new(), vertex_buffer)
-        },
-        |(path, vertex_buffer), path_def| {
-            PATH_FINDER.with_borrow_mut(|path_finder| {
-                let vertex_buffer = unsafe { &mut *vertex_buffer.0 };
-
-                path.clear();
-
-                if path_finder.find_path(graph, path, path_def.start, path_def.end) {
-                    if vertex_buffer_capacity < (vertex_buffer.vertex_count + path.len()) {
-                        return Err(RoutingResult::BufferOverflowError);
-                    }
-
-                    for (i, point) in path.iter().copied().enumerate() {
-                        unsafe {
-                            vertex_buffer
-                                .vertices
-                                .add(vertex_buffer.vertex_count + i)
-                                .write(Vertex {
-                                    net_id: path_def.net_id,
-                                    x: point.x as f32,
-                                    y: point.y as f32,
-                                });
-                        }
-                    }
-
-                    vertex_buffer.vertex_count += path.len();
-                } else {
-                    if vertex_buffer_capacity < (vertex_buffer.vertex_count + 2) {
-                        return Err(RoutingResult::BufferOverflowError);
-                    }
-
-                    unsafe {
-                        vertex_buffer
-                            .vertices
-                            .add(vertex_buffer.vertex_count + 0)
-                            .write(Vertex {
-                                net_id: path_def.net_id,
-                                x: path_def.start.x as f32,
-                                y: path_def.start.y as f32,
-                            });
-
-                        vertex_buffer
-                            .vertices
-                            .add(vertex_buffer.vertex_count + 1)
-                            .write(Vertex {
-                                net_id: path_def.net_id,
-                                x: path_def.end.x as f32,
-                                y: path_def.end.y as f32,
-                            });
-                    }
-
-                    vertex_buffer.vertex_count += 2;
-                }
-
-                Ok(())
+            RefCell::new(ThreadLocalData {
+                path_finder: PathFinder::default(),
+                path: Vec::new(),
+                buffer_index,
             })
-        },
-    );
+        });
+
+        let &mut ThreadLocalData {
+            ref mut path_finder,
+            ref mut path,
+            buffer_index,
+        } = &mut *thread_local_data.borrow_mut();
+
+        let vertex_buffers = vertex_buffers;
+        let vertex_buffer = unsafe { vertex_buffers.0.add(buffer_index) };
+        let vertex_buffer = unsafe { &mut *vertex_buffer };
+
+        path.clear();
+
+        if path_finder.find_path(graph, path, path_def.start, path_def.end) {
+            if vertex_buffer_capacity < (vertex_buffer.vertex_count + path.len()) {
+                return Err(RoutingResult::BufferOverflowError);
+            }
+
+            for (i, point) in path.iter().copied().enumerate() {
+                unsafe {
+                    vertex_buffer
+                        .vertices
+                        .add(vertex_buffer.vertex_count + i)
+                        .write(Vertex {
+                            net_id: path_def.net_id,
+                            x: point.x as f32,
+                            y: point.y as f32,
+                        });
+                }
+            }
+
+            vertex_buffer.vertex_count += path.len();
+        } else {
+            if vertex_buffer_capacity < (vertex_buffer.vertex_count + 2) {
+                return Err(RoutingResult::BufferOverflowError);
+            }
+
+            unsafe {
+                vertex_buffer
+                    .vertices
+                    .add(vertex_buffer.vertex_count + 0)
+                    .write(Vertex {
+                        net_id: path_def.net_id,
+                        x: path_def.start.x as f32,
+                        y: path_def.start.y as f32,
+                    });
+
+                vertex_buffer
+                    .vertices
+                    .add(vertex_buffer.vertex_count + 1)
+                    .write(Vertex {
+                        net_id: path_def.net_id,
+                        x: path_def.end.x as f32,
+                        y: path_def.end.y as f32,
+                    });
+            }
+
+            vertex_buffer.vertex_count += 2;
+        }
+
+        Ok(())
+    });
 
     match result {
         Ok(_) => RoutingResult::Success,
