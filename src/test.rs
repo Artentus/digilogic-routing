@@ -33,12 +33,12 @@ fn test_impl(
 
         vertex_buffers.push(VertexBuffer {
             vertices: ptr,
-            len: 0,
+            vertex_count: 0,
         });
     }
 
     let result = unsafe {
-        graph_find_paths(
+        RT_graph_find_paths(
             graph,
             paths,
             path_count,
@@ -54,7 +54,7 @@ fn test_impl(
         let vertices = unsafe {
             Vec::from_raw_parts(
                 vertex_buffer.vertices,
-                vertex_buffer.len,
+                vertex_buffer.vertex_count,
                 vertex_buffer_capacity,
             )
         };

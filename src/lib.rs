@@ -417,7 +417,7 @@ enum RoutingResult {
 
 #[no_mangle]
 #[must_use]
-unsafe extern "C" fn init_thread_pool(thread_count: *mut usize) -> RoutingResult {
+unsafe extern "C" fn RT_init_thread_pool(thread_count: *mut usize) -> RoutingResult {
     if thread_count.is_null() {
         return RoutingResult::NullPointerError;
     }
@@ -438,7 +438,7 @@ unsafe extern "C" fn init_thread_pool(thread_count: *mut usize) -> RoutingResult
 
 #[no_mangle]
 #[must_use]
-unsafe extern "C" fn graph_new(graph: *mut *mut Graph) -> RoutingResult {
+unsafe extern "C" fn RT_graph_new(graph: *mut *mut Graph) -> RoutingResult {
     if graph.is_null() {
         return RoutingResult::NullPointerError;
     }
@@ -453,7 +453,7 @@ unsafe extern "C" fn graph_new(graph: *mut *mut Graph) -> RoutingResult {
 
 #[no_mangle]
 #[must_use]
-unsafe extern "C" fn graph_build(
+unsafe extern "C" fn RT_graph_build(
     graph: *mut Graph,
     anchor_points: *const Point,
     anchor_point_count: usize,
@@ -474,7 +474,7 @@ unsafe extern "C" fn graph_build(
 
 #[no_mangle]
 #[must_use]
-unsafe extern "C" fn graph_free(graph: *mut Graph) -> RoutingResult {
+unsafe extern "C" fn RT_graph_free(graph: *mut Graph) -> RoutingResult {
     if graph.is_null() {
         return RoutingResult::NullPointerError;
     }
@@ -505,12 +505,12 @@ struct Vertex {
 #[repr(C)]
 struct VertexBuffer {
     vertices: *mut Vertex,
-    len: usize,
+    vertex_count: usize,
 }
 
 #[no_mangle]
 #[must_use]
-unsafe extern "C" fn graph_find_paths(
+unsafe extern "C" fn RT_graph_find_paths(
     graph: *const Graph,
     paths: *const PathDef,
     path_count: usize,
@@ -535,7 +535,7 @@ unsafe extern "C" fn graph_find_paths(
                 return RoutingResult::NullPointerError;
             }
 
-            vertex_buffer.len = 0;
+            vertex_buffer.vertex_count = 0;
         }
     }
 
@@ -560,7 +560,7 @@ unsafe extern "C" fn graph_find_paths(
                 path.clear();
 
                 if path_finder.find_path(graph, path, path_def.start, path_def.end) {
-                    if vertex_buffer_capacity < (vertex_buffer.len + path.len()) {
+                    if vertex_buffer_capacity < (vertex_buffer.vertex_count + path.len()) {
                         return Err(RoutingResult::BufferOverflowError);
                     }
 
@@ -568,7 +568,7 @@ unsafe extern "C" fn graph_find_paths(
                         unsafe {
                             vertex_buffer
                                 .vertices
-                                .add(vertex_buffer.len + i)
+                                .add(vertex_buffer.vertex_count + i)
                                 .write(Vertex {
                                     net_id: path_def.net_id,
                                     x: point.x as f32,
@@ -577,16 +577,16 @@ unsafe extern "C" fn graph_find_paths(
                         }
                     }
 
-                    vertex_buffer.len += path.len();
+                    vertex_buffer.vertex_count += path.len();
                 } else {
-                    if vertex_buffer_capacity < (vertex_buffer.len + 2) {
+                    if vertex_buffer_capacity < (vertex_buffer.vertex_count + 2) {
                         return Err(RoutingResult::BufferOverflowError);
                     }
 
                     unsafe {
                         vertex_buffer
                             .vertices
-                            .add(vertex_buffer.len + 0)
+                            .add(vertex_buffer.vertex_count + 0)
                             .write(Vertex {
                                 net_id: path_def.net_id,
                                 x: path_def.start.x as f32,
@@ -595,7 +595,7 @@ unsafe extern "C" fn graph_find_paths(
 
                         vertex_buffer
                             .vertices
-                            .add(vertex_buffer.len + 1)
+                            .add(vertex_buffer.vertex_count + 1)
                             .write(Vertex {
                                 net_id: path_def.net_id,
                                 x: path_def.end.x as f32,
@@ -603,7 +603,7 @@ unsafe extern "C" fn graph_find_paths(
                             });
                     }
 
-                    vertex_buffer.len += 2;
+                    vertex_buffer.vertex_count += 2;
                 }
 
                 Ok(())

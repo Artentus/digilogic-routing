@@ -10,69 +10,69 @@
 #include <stdlib.h>
 
 #if defined(__GNUC__) && (__GNUC__ >= 4)
-#define ROUTING_MUST_USE __attribute__ ((warn_unused_result))
+#define RT_MUST_USE __attribute__ ((warn_unused_result))
 #elif defined(_MSC_VER) && (_MSC_VER >= 1700)
-#define ROUTING_MUST_USE _Check_return_
+#define RT_MUST_USE _Check_return_
 #else
-#define ROUTING_MUST_USE
+#define RT_MUST_USE
 #endif
 
-enum RoutingResult {
-    ROUTING_RESULT_SUCCESS = 0,
-    ROUTING_RESULT_NULL_POINTER_ERROR = 1,
-    ROUTING_RESULT_INVALID_OPERATION_ERROR = 2,
-    ROUTING_RESULT_BUFFER_OVERFLOW_ERROR = 3,
+enum RT_Result {
+    RT_RESULT_SUCCESS = 0,
+    RT_RESULT_NULL_POINTER_ERROR = 1,
+    RT_RESULT_INVALID_OPERATION_ERROR = 2,
+    RT_RESULT_BUFFER_OVERFLOW_ERROR = 3,
 };
-typedef uint32_t RoutingResult;
+typedef uint32_t RT_Result;
 
-typedef struct Graph Graph;
+typedef struct RT_Graph RT_Graph;
 
-typedef struct Point {
+typedef struct RT_Point {
     int32_t x;
     int32_t y;
-} Point;
+} RT_Point;
 
-typedef struct BoundingBox {
-    struct Point center;
+typedef struct RT_BoundingBox {
+    struct RT_Point center;
     uint16_t half_width;
     uint16_t half_height;
-} BoundingBox;
+} RT_BoundingBox;
 
-typedef struct PathDef {
+typedef struct RT_PathDef {
     uint32_t net_id;
-    struct Point start;
-    struct Point end;
-} PathDef;
+    struct RT_Point start;
+    struct RT_Point end;
+} RT_PathDef;
 
-typedef struct Vertex {
+typedef struct RT_Vertex {
     uint32_t net_id;
     float x;
     float y;
-} Vertex;
+} RT_Vertex;
 
-typedef struct VertexBuffer {
-    struct Vertex *vertices;
-    size_t len;
-} VertexBuffer;
+typedef struct RT_VertexBuffer {
+    struct RT_Vertex *vertices;
+    size_t vertex_count;
+} RT_VertexBuffer;
 
-ROUTING_MUST_USE RoutingResult init_thread_pool(size_t *thread_count);
+RT_MUST_USE RT_Result RT_init_thread_pool(size_t *thread_count);
 
-ROUTING_MUST_USE RoutingResult graph_new(struct Graph **graph);
+RT_MUST_USE RT_Result RT_graph_new(struct RT_Graph **graph);
 
-ROUTING_MUST_USE
-RoutingResult graph_build(struct Graph *graph,
-                          const struct Point *anchor_points,
-                          size_t anchor_point_count,
-                          const struct BoundingBox *bounding_boxes,
-                          size_t bounding_box_count);
+RT_MUST_USE
+RT_Result RT_graph_build(struct RT_Graph *graph,
+                         const struct RT_Point *anchor_points,
+                         size_t anchor_point_count,
+                         const struct RT_BoundingBox *bounding_boxes,
+                         size_t bounding_box_count);
 
-ROUTING_MUST_USE RoutingResult graph_free(struct Graph *graph);
+RT_MUST_USE RT_Result RT_graph_free(struct RT_Graph *graph);
 
-ROUTING_MUST_USE
-RoutingResult graph_find_paths(const struct Graph *graph,
-                               const struct PathDef *paths,
-                               size_t path_count,
-                               struct VertexBuffer *vertex_buffers,
-                               size_t vertex_buffer_capacity);
+RT_MUST_USE
+RT_Result RT_graph_find_paths(const struct RT_Graph *graph,
+                              const struct RT_PathDef *paths,
+                              size_t path_count,
+                              struct RT_VertexBuffer *vertex_buffers,
+                              size_t vertex_buffer_capacity);
 
 #endif /* ROUTING_H */

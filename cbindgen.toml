@@ -16,18 +16,22 @@ usize_is_size_t = true
 after_includes = """
 
 #if defined(__GNUC__) && (__GNUC__ >= 4)
-#define ROUTING_MUST_USE __attribute__ ((warn_unused_result))
+#define RT_MUST_USE __attribute__ ((warn_unused_result))
 #elif defined(_MSC_VER) && (_MSC_VER >= 1700)
-#define ROUTING_MUST_USE _Check_return_
+#define RT_MUST_USE _Check_return_
 #else
-#define ROUTING_MUST_USE
+#define RT_MUST_USE
 #endif"""
 
 [export]
+prefix = "RT_"
 renaming_overrides_prefixing = false
 
+[export.rename]
+"RoutingResult" = "Result"
+
 [fn]
-must_use = "ROUTING_MUST_USE"
+must_use = "RT_MUST_USE"
 
 [enum]
 rename_variants = "QualifiedScreamingSnakeCase"
