@@ -25,7 +25,7 @@ impl<T: ?Sized> Copy for SyncPtr<T> {}
 unsafe impl<T: ?Sized> Send for SyncPtr<T> {}
 unsafe impl<T: ?Sized> Sync for SyncPtr<T> {}
 
-const INVALID_INDEX: u32 = u32::MAX;
+pub const INVALID_INDEX: u32 = u32::MAX;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 #[repr(C)]
@@ -468,6 +468,26 @@ unsafe extern "C" fn RT_graph_build(
     let anchor_points = unsafe { std::slice::from_raw_parts(anchor_points, anchor_point_count) };
     let bounding_boxes = unsafe { std::slice::from_raw_parts(bounding_boxes, bounding_box_count) };
     graph.build(anchor_points, bounding_boxes);
+
+    RoutingResult::Success
+}
+
+#[no_mangle]
+#[must_use]
+unsafe extern "C" fn RT_graph_get_nodes(
+    graph: *mut Graph,
+    nodes: *mut *const Node,
+    node_count: *mut usize,
+) -> RoutingResult {
+    if graph.is_null() || nodes.is_null() || node_count.is_null() {
+        return RoutingResult::NullPointerError;
+    }
+
+    let graph = unsafe { &mut *graph };
+    unsafe {
+        nodes.write(graph.nodes.0.as_ptr());
+        node_count.write(graph.nodes.0.len());
+    }
 
     RoutingResult::Success
 }

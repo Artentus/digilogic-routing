@@ -21,11 +21,20 @@ after_includes = """
 #define RT_MUST_USE _Check_return_
 #else
 #define RT_MUST_USE
-#endif"""
+#endif
+
+typedef struct RT_Node {
+    struct RT_Point point;
+    uint32_t pos_x_neighbor;
+    uint32_t neg_x_neighbor;
+    uint32_t pos_y_neighbor;
+    uint32_t neg_y_neighbor;
+} RT_Node;"""
 
 [export]
 prefix = "RT_"
 renaming_overrides_prefixing = false
+exclude = ["RT_Node"]
 
 [export.rename]
 "RoutingResult" = "Result"

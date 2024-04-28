@@ -17,6 +17,16 @@
 #define RT_MUST_USE
 #endif
 
+typedef struct RT_Node {
+    struct RT_Point point;
+    uint32_t pos_x_neighbor;
+    uint32_t neg_x_neighbor;
+    uint32_t pos_y_neighbor;
+    uint32_t neg_y_neighbor;
+} RT_Node;
+
+#define RT_INVALID_INDEX UINT32_MAX
+
 enum RT_Result {
     RT_RESULT_SUCCESS = 0,
     RT_RESULT_NULL_POINTER_ERROR = 1,
@@ -26,6 +36,8 @@ enum RT_Result {
 typedef uint32_t RT_Result;
 
 typedef struct RT_Graph RT_Graph;
+
+typedef struct RT_Node RT_Node;
 
 typedef struct RT_Point {
     int32_t x;
@@ -65,6 +77,11 @@ RT_Result RT_graph_build(struct RT_Graph *graph,
                          size_t anchor_point_count,
                          const struct RT_BoundingBox *bounding_boxes,
                          size_t bounding_box_count);
+
+RT_MUST_USE
+RT_Result RT_graph_get_nodes(struct RT_Graph *graph,
+                             const struct RT_Node **nodes,
+                             size_t *node_count);
 
 RT_MUST_USE RT_Result RT_graph_free(struct RT_Graph *graph);
 
