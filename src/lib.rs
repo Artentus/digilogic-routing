@@ -172,12 +172,19 @@ impl Index<u32> for NodeList {
     }
 }
 
+impl IndexMut<u32> for NodeList {
+    #[inline]
+    fn index_mut(&mut self, index: u32) -> &mut Self::Output {
+        &mut self.0[index as usize]
+    }
+}
+
 #[derive(Default)]
 struct Graph {
-    nodes: NodeList,
-    node_map: HashMap<Point, u32>,
     x_coords: Vec<i32>,
     y_coords: Vec<i32>,
+    node_map: HashMap<Point, u32>,
+    nodes: NodeList,
 }
 
 impl Graph {
@@ -222,39 +229,6 @@ impl Graph {
             true
         };
 
-        self.nodes.clear();
-        self.node_map.clear();
-        for anchor_point in anchor_points.iter().copied() {
-            let index = self.nodes.push(anchor_point);
-            self.node_map.insert(anchor_point, index);
-        }
-
-        for anchor_point_a in anchor_points.iter().copied() {
-            for anchor_point_b in anchor_points.iter().copied() {
-                if have_horizontal_sightline(anchor_point_a.y, anchor_point_a.x, anchor_point_b.x)
-                    && have_vertical_sightline(anchor_point_b.x, anchor_point_b.y, anchor_point_a.y)
-                {
-                    let point = Point {
-                        x: anchor_point_b.x,
-                        y: anchor_point_a.y,
-                    };
-                    let index = self.nodes.push(point);
-                    self.node_map.insert(point, index);
-                }
-
-                if have_horizontal_sightline(anchor_point_b.y, anchor_point_b.x, anchor_point_a.x)
-                    && have_vertical_sightline(anchor_point_a.x, anchor_point_a.y, anchor_point_b.y)
-                {
-                    let point = Point {
-                        x: anchor_point_a.x,
-                        y: anchor_point_b.y,
-                    };
-                    let index = self.nodes.push(point);
-                    self.node_map.insert(point, index);
-                }
-            }
-        }
-
         self.x_coords.clear();
         self.x_coords.reserve(anchor_points.len());
         self.x_coords
@@ -269,53 +243,76 @@ impl Graph {
         self.y_coords.par_sort_unstable();
         self.y_coords.dedup();
 
-        let nodes = SyncPtr(self.nodes.as_mut_ptr());
+        self.node_map.clear();
 
-        self.y_coords.par_iter().copied().for_each(|y| {
-            let nodes = nodes;
-            macro_rules! nodes {
-                ($index:expr) => {
-                    (unsafe { &mut *nodes.0.add($index as usize) })
-                };
+        for anchor_point in anchor_points.iter().copied() {
+            self.node_map.insert(anchor_point, 0);
+        }
+
+        for anchor_point_a in anchor_points.iter().copied() {
+            for anchor_point_b in anchor_points.iter().copied() {
+                if have_horizontal_sightline(anchor_point_a.y, anchor_point_a.x, anchor_point_b.x)
+                    && have_vertical_sightline(anchor_point_b.x, anchor_point_b.y, anchor_point_a.y)
+                {
+                    self.node_map.insert(
+                        Point {
+                            x: anchor_point_b.x,
+                            y: anchor_point_a.y,
+                        },
+                        0,
+                    );
+                }
+
+                if have_horizontal_sightline(anchor_point_b.y, anchor_point_b.x, anchor_point_a.x)
+                    && have_vertical_sightline(anchor_point_a.x, anchor_point_a.y, anchor_point_b.y)
+                {
+                    self.node_map.insert(
+                        Point {
+                            x: anchor_point_a.x,
+                            y: anchor_point_b.y,
+                        },
+                        0,
+                    );
+                }
             }
+        }
 
+        self.nodes.clear();
+
+        for y in self.y_coords.iter().copied() {
             let mut prev: Option<u32> = None;
             for x in self.x_coords.iter().copied() {
-                if let Some(index) = self.node_map.get(&Point { x, y }).copied() {
+                let point = Point { x, y };
+                if let Some(index) = self.node_map.get_mut(&point) {
+                    *index = self.nodes.push(point);
+
                     if let Some(prev) = prev {
-                        if have_horizontal_sightline(y, nodes![prev].point.x, x) {
-                            nodes![prev].neighbors[Direction::PosX] = index;
-                            nodes![index].neighbors[Direction::NegX] = prev;
+                        if have_horizontal_sightline(y, self.nodes[prev].point.x, x) {
+                            self.nodes[prev].neighbors[Direction::PosX] = *index;
+                            self.nodes[*index].neighbors[Direction::NegX] = prev;
                         }
                     }
 
-                    prev = Some(index);
+                    prev = Some(*index);
                 }
             }
-        });
+        }
 
-        self.x_coords.par_iter().copied().for_each(|x| {
-            let nodes = nodes;
-            macro_rules! nodes {
-                ($index:expr) => {
-                    (unsafe { &mut *nodes.0.add($index as usize) })
-                };
-            }
-
+        for x in self.x_coords.iter().copied() {
             let mut prev: Option<u32> = None;
             for y in self.y_coords.iter().copied() {
                 if let Some(index) = self.node_map.get(&Point { x, y }).copied() {
                     if let Some(prev) = prev {
-                        if have_vertical_sightline(x, nodes![prev].point.y, y) {
-                            nodes![prev].neighbors[Direction::PosY] = index;
-                            nodes![index].neighbors[Direction::NegY] = prev;
+                        if have_vertical_sightline(x, self.nodes[prev].point.y, y) {
+                            self.nodes[prev].neighbors[Direction::PosY] = index;
+                            self.nodes[index].neighbors[Direction::NegY] = prev;
                         }
                     }
 
                     prev = Some(index);
                 }
             }
-        });
+        }
     }
 
     #[inline]
