@@ -27,7 +27,7 @@ unsafe impl<T: ?Sized> Sync for SyncPtr<T> {}
 
 pub const INVALID_INDEX: u32 = u32::MAX;
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 #[repr(C)]
 struct Point {
     x: i32,
@@ -83,7 +83,7 @@ impl Direction {
     const ALL: [Self; 4] = [Self::PosX, Self::NegX, Self::PosY, Self::NegY];
 }
 
-#[derive(Clone)]
+#[derive(Debug, Clone)]
 #[repr(transparent)]
 struct NeighborList([u32; 4]);
 
@@ -130,31 +130,31 @@ impl IndexMut<Direction> for NeighborList {
     }
 }
 
-#[derive(Clone)]
+#[derive(Debug, Clone)]
 #[repr(C)]
 struct Node {
     point: Point,
     neighbors: NeighborList,
 }
 
+#[derive(Default, Debug)]
 #[repr(transparent)]
 struct NodeList(Vec<Node>);
 
 impl NodeList {
     #[inline]
-    fn new() -> Self {
-        Self(Vec::new())
+    fn clear(&mut self) {
+        self.0.clear();
     }
 
     #[inline]
-    fn resize(&mut self, new_len: u32) {
-        const INIT: Node = Node {
-            point: Point { x: 0, y: 0 },
+    fn push(&mut self, point: Point) -> u32 {
+        let index: u32 = self.0.len().try_into().expect("too many nodes");
+        self.0.push(Node {
+            point,
             neighbors: NeighborList::new(),
-        };
-
-        self.0.clear();
-        self.0.resize(new_len as usize, INIT);
+        });
+        index
     }
 
     #[inline]
@@ -172,24 +172,20 @@ impl Index<u32> for NodeList {
     }
 }
 
+#[derive(Default)]
 struct Graph {
+    nodes: NodeList,
+    node_map: HashMap<Point, u32>,
     x_coords: Vec<i32>,
     y_coords: Vec<i32>,
-    nodes: NodeList,
 }
 
 impl Graph {
-    fn new() -> Self {
-        Self {
-            x_coords: Vec::new(),
-            y_coords: Vec::new(),
-            nodes: NodeList::new(),
-        }
-    }
-
     fn build(&mut self, anchor_points: &[Point], bounding_boxes: &[BoundingBox]) {
-        let have_horizontal_sightline = |y: i32, x1: i32, x2: i32| -> bool {
-            assert!(x1 < x2);
+        let have_horizontal_sightline = |y: i32, mut x1: i32, mut x2: i32| -> bool {
+            if x1 > x2 {
+                std::mem::swap(&mut x1, &mut x2);
+            }
 
             for &bb in bounding_boxes {
                 if (y < bb.min_y()) || (y > bb.max_y()) {
@@ -206,8 +202,10 @@ impl Graph {
             true
         };
 
-        let have_vertical_sightline = |x: i32, y1: i32, y2: i32| -> bool {
-            assert!(y1 < y2);
+        let have_vertical_sightline = |x: i32, mut y1: i32, mut y2: i32| -> bool {
+            if y1 > y2 {
+                std::mem::swap(&mut y1, &mut y2);
+            }
 
             for &bb in bounding_boxes {
                 if (x < bb.min_x()) || (x > bb.max_x()) {
@@ -224,6 +222,39 @@ impl Graph {
             true
         };
 
+        self.nodes.clear();
+        self.node_map.clear();
+        for anchor_point in anchor_points.iter().copied() {
+            let index = self.nodes.push(anchor_point);
+            self.node_map.insert(anchor_point, index);
+        }
+
+        for anchor_point_a in anchor_points.iter().copied() {
+            for anchor_point_b in anchor_points.iter().copied() {
+                if have_horizontal_sightline(anchor_point_a.y, anchor_point_a.x, anchor_point_b.x)
+                    && have_vertical_sightline(anchor_point_b.x, anchor_point_b.y, anchor_point_a.y)
+                {
+                    let point = Point {
+                        x: anchor_point_b.x,
+                        y: anchor_point_a.y,
+                    };
+                    let index = self.nodes.push(point);
+                    self.node_map.insert(point, index);
+                }
+
+                if have_horizontal_sightline(anchor_point_b.y, anchor_point_b.x, anchor_point_a.x)
+                    && have_vertical_sightline(anchor_point_a.x, anchor_point_a.y, anchor_point_b.y)
+                {
+                    let point = Point {
+                        x: anchor_point_a.x,
+                        y: anchor_point_b.y,
+                    };
+                    let index = self.nodes.push(point);
+                    self.node_map.insert(point, index);
+                }
+            }
+        }
+
         self.x_coords.clear();
         self.x_coords.reserve(anchor_points.len());
         self.x_coords
@@ -238,79 +269,58 @@ impl Graph {
         self.y_coords.par_sort_unstable();
         self.y_coords.dedup();
 
-        let node_count: u32 = (self.x_coords.len() * self.y_coords.len())
-            .try_into()
-            .expect("too many nodes");
-        self.nodes.resize(node_count);
-
         let nodes = SyncPtr(self.nodes.as_mut_ptr());
 
-        self.y_coords
-            .par_iter()
-            .copied()
-            .enumerate()
-            .for_each(|(yi, y)| {
-                let nodes = nodes;
-                macro_rules! nodes {
-                    ($index:expr) => {
-                        (unsafe { &mut *nodes.0.add($index) })
-                    };
-                }
+        self.y_coords.par_iter().copied().for_each(|y| {
+            let nodes = nodes;
+            macro_rules! nodes {
+                ($index:expr) => {
+                    (unsafe { &mut *nodes.0.add($index as usize) })
+                };
+            }
 
-                let mut prev: Option<usize> = None;
-                for (xi, x) in self.x_coords.iter().copied().enumerate() {
-                    let index = yi * self.x_coords.len() + xi;
-                    nodes![index].point = Point { x, y };
-
+            let mut prev: Option<u32> = None;
+            for x in self.x_coords.iter().copied() {
+                if let Some(index) = self.node_map.get(&Point { x, y }).copied() {
                     if let Some(prev) = prev {
                         if have_horizontal_sightline(y, nodes![prev].point.x, x) {
-                            nodes![prev].neighbors[Direction::PosX] = index as u32;
-                            nodes![index].neighbors[Direction::NegX] = prev as u32;
+                            nodes![prev].neighbors[Direction::PosX] = index;
+                            nodes![index].neighbors[Direction::NegX] = prev;
                         }
                     }
 
                     prev = Some(index);
                 }
-            });
+            }
+        });
 
-        self.x_coords
-            .par_iter()
-            .copied()
-            .enumerate()
-            .for_each(|(xi, x)| {
-                let nodes = nodes;
-                macro_rules! nodes {
-                    ($index:expr) => {
-                        (unsafe { &mut *nodes.0.add($index) })
-                    };
-                }
+        self.x_coords.par_iter().copied().for_each(|x| {
+            let nodes = nodes;
+            macro_rules! nodes {
+                ($index:expr) => {
+                    (unsafe { &mut *nodes.0.add($index as usize) })
+                };
+            }
 
-                let mut prev: Option<usize> = None;
-                for (yi, y) in self.y_coords.iter().copied().enumerate() {
-                    let index = yi * self.x_coords.len() + xi;
-
+            let mut prev: Option<u32> = None;
+            for y in self.y_coords.iter().copied() {
+                if let Some(index) = self.node_map.get(&Point { x, y }).copied() {
                     if let Some(prev) = prev {
                         if have_vertical_sightline(x, nodes![prev].point.y, y) {
-                            nodes![prev].neighbors[Direction::PosY] = index as u32;
-                            nodes![index].neighbors[Direction::NegY] = prev as u32;
+                            nodes![prev].neighbors[Direction::PosY] = index;
+                            nodes![index].neighbors[Direction::NegY] = prev;
                         }
                     }
 
                     prev = Some(index);
                 }
-            });
+            }
+        });
     }
 
+    #[inline]
     fn find_node(&self, point: Point) -> Option<u32> {
-        self.nodes
-            .0
-            .binary_search_by(|node| {
-                let x_ord = node.point.x.cmp(&point.x);
-                let y_ord = node.point.y.cmp(&point.y);
-                y_ord.then(x_ord)
-            })
-            .ok()
-            .map(|index| index as u32)
+        self.node_map.get(&point).copied()
     }
 }
 
@@ -453,7 +463,7 @@ unsafe extern "C" fn RT_graph_new(graph: *mut *mut Graph) -> RoutingResult {
         return RoutingResult::NullPointerError;
     }
 
-    let ptr = Box::into_raw(Box::new(Graph::new()));
+    let ptr = Box::into_raw(Box::new(Graph::default()));
     unsafe {
         graph.write(ptr);
     }
