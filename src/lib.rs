@@ -6,7 +6,6 @@ mod test;
 use rayon::prelude::*;
 use std::cell::RefCell;
 use std::cmp::Reverse;
-use std::num::NonZeroU16;
 use std::ops::{Index, IndexMut};
 
 type HashMap<K, V> = ahash::AHashMap<K, V>;
@@ -26,29 +25,9 @@ impl<T: ?Sized> Copy for SyncPtr<T> {}
 unsafe impl<T: ?Sized> Send for SyncPtr<T> {}
 unsafe impl<T: ?Sized> Sync for SyncPtr<T> {}
 
+pub const INVALID_INDEX: u32 = u32::MAX;
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-enum Direction {
-    PosX,
-    NegX,
-    PosY,
-    NegY,
-}
-
-impl Direction {
-    const ALL: [Self; 4] = [Self::PosX, Self::NegX, Self::PosY, Self::NegY];
-
-    #[inline]
-    const fn opposite(self) -> Self {
-        match self {
-            Self::PosX => Self::NegX,
-            Self::NegX => Self::PosX,
-            Self::PosY => Self::NegY,
-            Self::NegY => Self::PosY,
-        }
-    }
-}
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 #[repr(C)]
 struct Point {
     x: i32,
@@ -59,28 +38,6 @@ impl Point {
     #[inline]
     fn manhatten_distance_to(self, other: Self) -> u32 {
         self.x.abs_diff(other.x) + self.y.abs_diff(other.y)
-    }
-
-    #[inline]
-    fn offset(self, dir: Direction, offset: u16) -> Self {
-        match dir {
-            Direction::PosX => Self {
-                x: self.x + (offset as i32),
-                y: self.y,
-            },
-            Direction::NegX => Self {
-                x: self.x - (offset as i32),
-                y: self.y,
-            },
-            Direction::PosY => Self {
-                x: self.x,
-                y: self.y + (offset as i32),
-            },
-            Direction::NegY => Self {
-                x: self.x,
-                y: self.y - (offset as i32),
-            },
-        }
     }
 }
 
@@ -114,19 +71,41 @@ impl BoundingBox {
     }
 }
 
-#[derive(Debug, Clone, Copy)]
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum Direction {
+    PosX,
+    NegX,
+    PosY,
+    NegY,
+}
+
+impl Direction {
+    const ALL: [Self; 4] = [Self::PosX, Self::NegX, Self::PosY, Self::NegY];
+}
+
+#[derive(Clone)]
 #[repr(transparent)]
-struct NeighborList([Option<NonZeroU16>; 4]);
+struct NeighborList([u32; 4]);
 
 impl NeighborList {
     #[inline]
     const fn new() -> Self {
-        Self([None; 4])
+        Self([INVALID_INDEX; 4])
+    }
+
+    fn find(&self, node: u32) -> Option<Direction> {
+        for dir in Direction::ALL {
+            if self[dir] == node {
+                return Some(dir);
+            }
+        }
+
+        None
     }
 }
 
 impl Index<Direction> for NeighborList {
-    type Output = Option<NonZeroU16>;
+    type Output = u32;
 
     #[inline]
     fn index(&self, index: Direction) -> &Self::Output {
@@ -151,19 +130,66 @@ impl IndexMut<Direction> for NeighborList {
     }
 }
 
-#[derive(Default, Debug)]
+#[derive(Clone)]
+#[repr(C)]
+struct Node {
+    point: Point,
+    neighbors: NeighborList,
+}
+
+#[repr(transparent)]
+struct NodeList(Vec<Node>);
+
+impl NodeList {
+    #[inline]
+    fn new() -> Self {
+        Self(Vec::new())
+    }
+
+    #[inline]
+    fn resize(&mut self, new_len: u32) {
+        const INIT: Node = Node {
+            point: Point { x: 0, y: 0 },
+            neighbors: NeighborList::new(),
+        };
+
+        self.0.clear();
+        self.0.resize(new_len as usize, INIT);
+    }
+
+    #[inline]
+    fn as_mut_ptr(&mut self) -> *mut Node {
+        self.0.as_mut_ptr()
+    }
+}
+
+impl Index<u32> for NodeList {
+    type Output = Node;
+
+    #[inline]
+    fn index(&self, index: u32) -> &Self::Output {
+        &self.0[index as usize]
+    }
+}
+
 struct Graph {
     x_coords: Vec<i32>,
     y_coords: Vec<i32>,
-    nodes: HashMap<Point, NeighborList>,
+    nodes: NodeList,
 }
 
 impl Graph {
+    fn new() -> Self {
+        Self {
+            x_coords: Vec::new(),
+            y_coords: Vec::new(),
+            nodes: NodeList::new(),
+        }
+    }
+
     fn build(&mut self, anchor_points: &[Point], bounding_boxes: &[BoundingBox]) {
-        let have_horizontal_sightline = |y: i32, mut x1: i32, mut x2: i32| -> bool {
-            if x1 > x2 {
-                std::mem::swap(&mut x1, &mut x2);
-            }
+        let have_horizontal_sightline = |y: i32, x1: i32, x2: i32| -> bool {
+            assert!(x1 < x2);
 
             for &bb in bounding_boxes {
                 if (y < bb.min_y()) || (y > bb.max_y()) {
@@ -180,10 +206,8 @@ impl Graph {
             true
         };
 
-        let have_vertical_sightline = |x: i32, mut y1: i32, mut y2: i32| -> bool {
-            if y1 > y2 {
-                std::mem::swap(&mut y1, &mut y2);
-            }
+        let have_vertical_sightline = |x: i32, y1: i32, y2: i32| -> bool {
+            assert!(y1 < y2);
 
             for &bb in bounding_boxes {
                 if (x < bb.min_x()) || (x > bb.max_x()) {
@@ -200,39 +224,6 @@ impl Graph {
             true
         };
 
-        self.nodes.clear();
-        for anchor_point in anchor_points.iter().copied() {
-            self.nodes.insert(anchor_point, NeighborList::new());
-        }
-
-        for anchor_point_a in anchor_points.iter().copied() {
-            for anchor_point_b in anchor_points.iter().copied() {
-                if have_horizontal_sightline(anchor_point_a.y, anchor_point_a.x, anchor_point_b.x)
-                    && have_vertical_sightline(anchor_point_b.x, anchor_point_b.y, anchor_point_a.y)
-                {
-                    self.nodes.insert(
-                        Point {
-                            x: anchor_point_b.x,
-                            y: anchor_point_a.y,
-                        },
-                        NeighborList::new(),
-                    );
-                }
-
-                if have_horizontal_sightline(anchor_point_b.y, anchor_point_b.x, anchor_point_a.x)
-                    && have_vertical_sightline(anchor_point_a.x, anchor_point_a.y, anchor_point_b.y)
-                {
-                    self.nodes.insert(
-                        Point {
-                            x: anchor_point_a.x,
-                            y: anchor_point_b.y,
-                        },
-                        NeighborList::new(),
-                    );
-                }
-            }
-        }
-
         self.x_coords.clear();
         self.x_coords.reserve(anchor_points.len());
         self.x_coords
@@ -247,91 +238,113 @@ impl Graph {
         self.y_coords.par_sort_unstable();
         self.y_coords.dedup();
 
-        for y in self.y_coords.iter().copied() {
-            let mut prev_x: Option<i32> = None;
-            for x in self.x_coords.iter().copied() {
-                let point = Point { x, y };
-                if !self.nodes.contains_key(&point) {
-                    continue;
+        let node_count: u32 = (self.x_coords.len() * self.y_coords.len())
+            .try_into()
+            .expect("too many nodes");
+        self.nodes.resize(node_count);
+
+        let nodes = SyncPtr(self.nodes.as_mut_ptr());
+
+        self.y_coords
+            .par_iter()
+            .copied()
+            .enumerate()
+            .for_each(|(yi, y)| {
+                let nodes = nodes;
+                macro_rules! nodes {
+                    ($index:expr) => {
+                        (unsafe { &mut *nodes.0.add($index) })
+                    };
                 }
 
-                if let Some(prev_x) = prev_x {
-                    let prev_point = Point { x: prev_x, y };
-                    let x_diff =
-                        NonZeroU16::new(u16::try_from(x - prev_x).expect("node distance too far"))
-                            .expect("duplicate coordinates");
+                let mut prev: Option<usize> = None;
+                for (xi, x) in self.x_coords.iter().copied().enumerate() {
+                    let index = yi * self.x_coords.len() + xi;
+                    nodes![index].point = Point { x, y };
 
-                    if have_horizontal_sightline(y, prev_x, x) {
-                        let prev_node = self.nodes.get_mut(&prev_point).expect("invalid node");
-                        prev_node[Direction::PosX] = Some(x_diff);
-
-                        let node = self.nodes.get_mut(&point).expect("invalid node");
-                        node[Direction::NegX] = Some(x_diff);
+                    if let Some(prev) = prev {
+                        if have_horizontal_sightline(y, nodes![prev].point.x, x) {
+                            nodes![prev].neighbors[Direction::PosX] = index as u32;
+                            nodes![index].neighbors[Direction::NegX] = prev as u32;
+                        }
                     }
+
+                    prev = Some(index);
+                }
+            });
+
+        self.x_coords
+            .par_iter()
+            .copied()
+            .enumerate()
+            .for_each(|(xi, x)| {
+                let nodes = nodes;
+                macro_rules! nodes {
+                    ($index:expr) => {
+                        (unsafe { &mut *nodes.0.add($index) })
+                    };
                 }
 
-                prev_x = Some(x);
-            }
-        }
+                let mut prev: Option<usize> = None;
+                for (yi, y) in self.y_coords.iter().copied().enumerate() {
+                    let index = yi * self.x_coords.len() + xi;
 
-        for x in self.x_coords.iter().copied() {
-            let mut prev_y: Option<i32> = None;
-            for y in self.y_coords.iter().copied() {
-                let point = Point { x, y };
-                if !self.nodes.contains_key(&point) {
-                    continue;
-                }
-
-                if let Some(prev_y) = prev_y {
-                    let prev_point = Point { x, y: prev_y };
-                    let y_diff =
-                        NonZeroU16::new(u16::try_from(y - prev_y).expect("node distance too far"))
-                            .expect("duplicate coordinates");
-
-                    if have_vertical_sightline(x, prev_y, y) {
-                        let prev_node = self.nodes.get_mut(&prev_point).expect("invalid node");
-                        prev_node[Direction::PosY] = Some(y_diff);
-
-                        let node = self.nodes.get_mut(&point).expect("invalid node");
-                        node[Direction::NegY] = Some(y_diff);
+                    if let Some(prev) = prev {
+                        if have_vertical_sightline(x, nodes![prev].point.y, y) {
+                            nodes![prev].neighbors[Direction::PosY] = index as u32;
+                            nodes![index].neighbors[Direction::NegY] = prev as u32;
+                        }
                     }
-                }
 
-                prev_y = Some(y);
-            }
-        }
+                    prev = Some(index);
+                }
+            });
+    }
+
+    fn find_node(&self, point: Point) -> Option<u32> {
+        self.nodes
+            .0
+            .binary_search_by(|node| {
+                let x_ord = node.point.x.cmp(&point.x);
+                let y_ord = node.point.y.cmp(&point.y);
+                y_ord.then(x_ord)
+            })
+            .ok()
+            .map(|index| index as u32)
     }
 }
 
 #[derive(Default)]
 struct PathFinder {
-    g_score: HashMap<Point, u32>,
-    predecessor: HashMap<Point, Direction>,
-    open_queue: PriorityQueue<Point, Reverse<u32>>,
+    g_score: HashMap<u32, u32>,
+    predecessor: HashMap<u32, u32>,
+    open_queue: PriorityQueue<u32, Reverse<u32>>,
 }
 
 impl PathFinder {
-    fn build_path(&self, graph: &Graph, path: &mut Vec<Point>, start: Point) {
-        path.push(start);
+    fn build_path(&self, graph: &Graph, path: &mut Vec<Point>, start_index: u32) {
+        path.push(graph.nodes[start_index].point);
 
         let mut dir: Option<Direction> = None;
-        let mut current = start;
+        let mut current_index = start_index;
         loop {
-            let Some(&pred_dir) = self.predecessor.get(&current) else {
+            let Some(&pred_index) = self.predecessor.get(&current_index) else {
                 break;
             };
 
-            let pred_offset = graph.nodes[&current][pred_dir].expect("invalid predecessor");
-            let pred = current.offset(pred_dir, pred_offset.get());
+            let pred_dir = graph.nodes[current_index]
+                .neighbors
+                .find(pred_index)
+                .expect("invalid predecessor");
 
             if Some(pred_dir) == dir {
-                *path.last_mut().unwrap() = pred;
+                *path.last_mut().unwrap() = graph.nodes[pred_index].point;
             } else {
-                path.push(pred);
+                path.push(graph.nodes[pred_index].point);
                 dir = Some(pred_dir);
             }
 
-            current = pred;
+            current_index = pred_index;
         }
     }
 
@@ -346,43 +359,55 @@ impl PathFinder {
         self.predecessor.clear();
         self.open_queue.clear();
 
-        self.g_score.insert(end, 0);
-        self.open_queue.push(end, Reverse(0));
+        let start_index = graph.find_node(start).expect("invalid start node");
+        let end_index = graph.find_node(end).expect("invalid end node");
 
-        while let Some((current, _)) = self.open_queue.pop() {
-            if current == start {
-                self.build_path(graph, path, start);
+        self.g_score.insert(end_index, 0);
+        self.open_queue.push(end_index, Reverse(0));
+
+        while let Some((current_index, _)) = self.open_queue.pop() {
+            if current_index == start_index {
+                self.build_path(graph, path, start_index);
                 return true;
             }
 
             let straight_dir = self
                 .predecessor
-                .get(&current)
+                .get(&current_index)
                 .copied()
-                .map(Direction::opposite);
+                .map(|pred_index| {
+                    graph.nodes[pred_index]
+                        .neighbors
+                        .find(current_index)
+                        .expect("invalid predecessor")
+                });
 
             for dir in Direction::ALL {
-                let Some(neighbor_offset) = graph.nodes[&current][dir] else {
+                let neighbor_index = graph.nodes[current_index].neighbors[dir];
+                if neighbor_index == INVALID_INDEX {
                     continue;
-                };
+                }
 
-                let neighbor = current.offset(dir, neighbor_offset.get());
-
-                let new_g_score = self.g_score[&current]
-                    + (neighbor_offset.get() as u32)
+                let new_g_score = self.g_score[&current_index]
+                    + graph.nodes[current_index]
+                        .point
+                        .manhatten_distance_to(graph.nodes[neighbor_index].point)
                         * if Some(dir) == straight_dir { 1 } else { 2 };
 
-                let update = match self.g_score.get(&neighbor) {
+                let update = match self.g_score.get(&neighbor_index) {
                     Some(&g_score) => new_g_score < g_score,
                     None => true,
                 };
 
                 if update {
-                    self.g_score.insert(neighbor, new_g_score);
-                    self.predecessor.insert(neighbor, dir.opposite());
+                    self.g_score.insert(neighbor_index, new_g_score);
+                    self.predecessor.insert(neighbor_index, current_index);
 
-                    let new_f_score = new_g_score + neighbor.manhatten_distance_to(start);
-                    self.open_queue.push(neighbor, Reverse(new_f_score));
+                    let new_f_score = new_g_score
+                        + graph.nodes[neighbor_index]
+                            .point
+                            .manhatten_distance_to(start);
+                    self.open_queue.push(neighbor_index, Reverse(new_f_score));
                 }
             }
         }
@@ -428,7 +453,7 @@ unsafe extern "C" fn RT_graph_new(graph: *mut *mut Graph) -> RoutingResult {
         return RoutingResult::NullPointerError;
     }
 
-    let ptr = Box::into_raw(Box::new(Graph::default()));
+    let ptr = Box::into_raw(Box::new(Graph::new()));
     unsafe {
         graph.write(ptr);
     }
@@ -461,78 +486,20 @@ unsafe extern "C" fn RT_graph_build(
 #[must_use]
 unsafe extern "C" fn RT_graph_get_nodes(
     graph: *const Graph,
-    buffer: *mut Point,
-    buffer_size: usize,
+    nodes: *mut *const Node,
     node_count: *mut usize,
 ) -> RoutingResult {
-    if graph.is_null() || buffer.is_null() || node_count.is_null() {
+    if graph.is_null() || nodes.is_null() || node_count.is_null() {
         return RoutingResult::NullPointerError;
     }
 
     let graph = unsafe { &*graph };
-    if graph.nodes.len() > buffer_size {
-        return RoutingResult::BufferOverflowError;
-    }
-
     unsafe {
-        node_count.write(graph.nodes.len());
-    }
-
-    for (i, node) in graph.nodes.keys().copied().enumerate() {
-        unsafe {
-            buffer.add(i).write(node);
-        }
+        nodes.write(graph.nodes.0.as_ptr());
+        node_count.write(graph.nodes.0.len());
     }
 
     RoutingResult::Success
-}
-
-#[repr(C)]
-struct Neighbors {
-    pos_x: Point,
-    neg_x: Point,
-    pos_y: Point,
-    neg_y: Point,
-}
-
-#[no_mangle]
-#[must_use]
-unsafe extern "C" fn RT_graph_get_node_neighbors(
-    graph: *const Graph,
-    node: Point,
-    neighbors: *mut Neighbors,
-) -> RoutingResult {
-    if graph.is_null() || neighbors.is_null() {
-        return RoutingResult::NullPointerError;
-    }
-
-    let graph = unsafe { &*graph };
-    if let Some(list) = graph.nodes.get(&node).copied() {
-        unsafe {
-            neighbors.write(Neighbors {
-                pos_x: node.offset(
-                    Direction::PosX,
-                    list[Direction::PosX].map(NonZeroU16::get).unwrap_or(0),
-                ),
-                neg_x: node.offset(
-                    Direction::NegX,
-                    list[Direction::NegX].map(NonZeroU16::get).unwrap_or(0),
-                ),
-                pos_y: node.offset(
-                    Direction::PosY,
-                    list[Direction::PosY].map(NonZeroU16::get).unwrap_or(0),
-                ),
-                neg_y: node.offset(
-                    Direction::NegY,
-                    list[Direction::NegY].map(NonZeroU16::get).unwrap_or(0),
-                ),
-            });
-        }
-
-        RoutingResult::Success
-    } else {
-        RoutingResult::InvalidOperationError
-    }
 }
 
 #[no_mangle]
