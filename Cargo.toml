@@ -4,7 +4,11 @@ version = "0.1.0"
 edition = "2021"
 
 [lib]
-crate-type = ["staticlib"]
+crate-type = ["rlib", "staticlib"]
+
+[[bench]]
+name = "build_graph"
+harness = false
 
 [dependencies]
 priority-queue = "2.0.2"
@@ -12,3 +16,6 @@ ahash = "0.8.11"
 rayon = "1.10.0"
 num_cpus = "1.16.0"
 thread_local = "1.1.8"
+
+[dev-dependencies]
+criterion = "0.5.1"
