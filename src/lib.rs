@@ -27,11 +27,23 @@ unsafe impl<T: ?Sized> Sync for SyncPtr<T> {}
 
 pub const INVALID_INDEX: u32 = u32::MAX;
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum Direction {
+    PosX,
+    NegX,
+    PosY,
+    NegY,
+}
+
+impl Direction {
+    const ALL: [Self; 4] = [Self::PosX, Self::NegX, Self::PosY, Self::NegY];
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 #[repr(C)]
-struct Point {
-    x: i32,
-    y: i32,
+pub struct Point {
+    pub x: i32,
+    pub y: i32,
 }
 
 impl Point {
@@ -43,10 +55,10 @@ impl Point {
 
 #[derive(Debug, Clone, Copy)]
 #[repr(C)]
-struct BoundingBox {
-    center: Point,
-    half_width: u16,
-    half_height: u16,
+pub struct BoundingBox {
+    pub center: Point,
+    pub half_width: u16,
+    pub half_height: u16,
 }
 
 impl BoundingBox {
@@ -69,18 +81,6 @@ impl BoundingBox {
     fn max_y(self) -> i32 {
         self.center.y + (self.half_height as i32)
     }
-}
-
-#[derive(Clone, Copy, PartialEq, Eq)]
-enum Direction {
-    PosX,
-    NegX,
-    PosY,
-    NegY,
-}
-
-impl Direction {
-    const ALL: [Self; 4] = [Self::PosX, Self::NegX, Self::PosY, Self::NegY];
 }
 
 #[derive(Debug, Clone)]
@@ -156,11 +156,6 @@ impl NodeList {
         });
         index
     }
-
-    #[inline]
-    fn as_mut_ptr(&mut self) -> *mut Node {
-        self.0.as_mut_ptr()
-    }
 }
 
 impl Index<u32> for NodeList {
@@ -180,7 +175,7 @@ impl IndexMut<u32> for NodeList {
 }
 
 #[derive(Default)]
-struct Graph {
+pub struct Graph {
     x_coords: Vec<i32>,
     y_coords: Vec<i32>,
     node_map: HashMap<Point, u32>,
@@ -188,7 +183,7 @@ struct Graph {
 }
 
 impl Graph {
-    fn build(&mut self, anchor_points: &[Point], bounding_boxes: &[BoundingBox]) {
+    pub fn build(&mut self, anchor_points: &[Point], bounding_boxes: &[BoundingBox]) {
         let have_horizontal_sightline = |y: i32, mut x1: i32, mut x2: i32| -> bool {
             if x1 > x2 {
                 std::mem::swap(&mut x1, &mut x2);
@@ -322,7 +317,7 @@ impl Graph {
 }
 
 #[derive(Default)]
-struct PathFinder {
+pub struct PathFinder {
     g_score: HashMap<u32, u32>,
     predecessor: HashMap<u32, u32>,
     open_queue: PriorityQueue<u32, Reverse<u32>>,
@@ -355,7 +350,7 @@ impl PathFinder {
         }
     }
 
-    fn find_path(
+    pub fn find_path(
         &mut self,
         graph: &Graph,
         path: &mut Vec<Point>,
@@ -545,6 +540,33 @@ struct VertexBuffer {
     vertex_count: usize,
 }
 
+fn extend_vertex_buffer(
+    vertex_buffer: &mut VertexBuffer,
+    vertex_buffer_capacity: usize,
+    path: &[Point],
+    net_id: u32,
+) -> Result<(), RoutingResult> {
+    if vertex_buffer_capacity < (vertex_buffer.vertex_count + path.len()) {
+        return Err(RoutingResult::BufferOverflowError);
+    }
+
+    for (i, point) in path.iter().copied().enumerate() {
+        unsafe {
+            vertex_buffer
+                .vertices
+                .add(vertex_buffer.vertex_count + i)
+                .write(Vertex {
+                    net_id,
+                    x: point.x as f32,
+                    y: point.y as f32,
+                });
+        }
+    }
+
+    vertex_buffer.vertex_count += path.len();
+    Ok(())
+}
+
 #[no_mangle]
 #[must_use]
 unsafe extern "C" fn RT_graph_find_paths(
@@ -608,53 +630,20 @@ unsafe extern "C" fn RT_graph_find_paths(
             path.clear();
 
             if path_finder.find_path(graph, path, path_def.start, path_def.end) {
-                if vertex_buffer_capacity < (vertex_buffer.vertex_count + path.len()) {
-                    return Err(RoutingResult::BufferOverflowError);
-                }
-
-                for (i, point) in path.iter().copied().enumerate() {
-                    unsafe {
-                        vertex_buffer
-                            .vertices
-                            .add(vertex_buffer.vertex_count + i)
-                            .write(Vertex {
-                                net_id: path_def.net_id,
-                                x: point.x as f32,
-                                y: point.y as f32,
-                            });
-                    }
-                }
-
-                vertex_buffer.vertex_count += path.len();
+                extend_vertex_buffer(
+                    vertex_buffer,
+                    vertex_buffer_capacity,
+                    &path,
+                    path_def.net_id,
+                )
             } else {
-                if vertex_buffer_capacity < (vertex_buffer.vertex_count + 2) {
-                    return Err(RoutingResult::BufferOverflowError);
-                }
-
-                unsafe {
-                    vertex_buffer
-                        .vertices
-                        .add(vertex_buffer.vertex_count + 0)
-                        .write(Vertex {
-                            net_id: path_def.net_id,
-                            x: path_def.start.x as f32,
-                            y: path_def.start.y as f32,
-                        });
-
-                    vertex_buffer
-                        .vertices
-                        .add(vertex_buffer.vertex_count + 1)
-                        .write(Vertex {
-                            net_id: path_def.net_id,
-                            x: path_def.end.x as f32,
-                            y: path_def.end.y as f32,
-                        });
-                }
-
-                vertex_buffer.vertex_count += 2;
+                extend_vertex_buffer(
+                    vertex_buffer,
+                    vertex_buffer_capacity,
+                    &[path_def.start, path_def.end],
+                    path_def.net_id,
+                )
             }
-
-            Ok(())
         })
     });
 
