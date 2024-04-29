@@ -156,6 +156,11 @@ impl NodeList {
         self.0.clear();
         self.0.resize(new_len as usize, INIT);
     }
+
+    #[inline]
+    fn as_mut_ptr(&mut self) -> *mut Node {
+        self.0.as_mut_ptr()
+    }
 }
 
 impl Index<u32> for NodeList {
@@ -164,13 +169,6 @@ impl Index<u32> for NodeList {
     #[inline]
     fn index(&self, index: u32) -> &Self::Output {
         &self.0[index as usize]
-    }
-}
-
-impl IndexMut<u32> for NodeList {
-    #[inline]
-    fn index_mut(&mut self, index: u32) -> &mut Self::Output {
-        &mut self.0[index as usize]
     }
 }
 
@@ -245,38 +243,62 @@ impl Graph {
             .expect("too many nodes");
         self.nodes.resize(node_count);
 
-        for (yi, &y) in self.y_coords.iter().enumerate() {
-            let mut prev: Option<u32> = None;
-            for (xi, &x) in self.x_coords.iter().enumerate() {
-                let index = (yi * self.x_coords.len() + xi) as u32;
-                self.nodes[index].point = Point { x, y };
+        let nodes = SyncPtr(self.nodes.as_mut_ptr());
 
-                if let Some(prev) = prev {
-                    if have_horizontal_sightline(y, self.nodes[prev].point.x, x) {
-                        self.nodes[prev].neighbors[Direction::PosX] = index;
-                        self.nodes[index].neighbors[Direction::NegX] = prev;
-                    }
+        self.y_coords
+            .par_iter()
+            .copied()
+            .enumerate()
+            .for_each(|(yi, y)| {
+                let nodes = nodes;
+                macro_rules! nodes {
+                    ($index:expr) => {
+                        (unsafe { &mut *nodes.0.add($index) })
+                    };
                 }
 
-                prev = Some(index);
-            }
-        }
+                let mut prev: Option<usize> = None;
+                for (xi, x) in self.x_coords.iter().copied().enumerate() {
+                    let index = yi * self.x_coords.len() + xi;
+                    nodes![index].point = Point { x, y };
 
-        for (xi, &x) in self.x_coords.iter().enumerate() {
-            let mut prev: Option<u32> = None;
-            for (yi, &y) in self.y_coords.iter().enumerate() {
-                let index = (yi * self.x_coords.len() + xi) as u32;
-
-                if let Some(prev) = prev {
-                    if have_vertical_sightline(x, self.nodes[prev].point.y, y) {
-                        self.nodes[prev].neighbors[Direction::PosY] = index;
-                        self.nodes[index].neighbors[Direction::NegY] = prev;
+                    if let Some(prev) = prev {
+                        if have_horizontal_sightline(y, nodes![prev].point.x, x) {
+                            nodes![prev].neighbors[Direction::PosX] = index as u32;
+                            nodes![index].neighbors[Direction::NegX] = prev as u32;
+                        }
                     }
+
+                    prev = Some(index);
+                }
+            });
+
+        self.x_coords
+            .par_iter()
+            .copied()
+            .enumerate()
+            .for_each(|(xi, x)| {
+                let nodes = nodes;
+                macro_rules! nodes {
+                    ($index:expr) => {
+                        (unsafe { &mut *nodes.0.add($index) })
+                    };
                 }
 
-                prev = Some(index);
-            }
-        }
+                let mut prev: Option<usize> = None;
+                for (yi, y) in self.y_coords.iter().copied().enumerate() {
+                    let index = yi * self.x_coords.len() + xi;
+
+                    if let Some(prev) = prev {
+                        if have_vertical_sightline(x, nodes![prev].point.y, y) {
+                            nodes![prev].neighbors[Direction::PosY] = index as u32;
+                            nodes![index].neighbors[Direction::NegY] = prev as u32;
+                        }
+                    }
+
+                    prev = Some(index);
+                }
+            });
     }
 
     fn find_node(&self, point: Point) -> Option<u32> {
