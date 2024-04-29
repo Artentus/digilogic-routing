@@ -77,7 +77,7 @@ fn test_impl(
 
 #[test]
 fn straight() {
-    let mut graph = Graph::new();
+    let mut graph = Graph::default();
     graph.build(POINTS, &[]);
 
     test_impl(
@@ -105,7 +105,7 @@ fn straight() {
 
 #[test]
 fn one_bend() {
-    let mut graph = Graph::new();
+    let mut graph = Graph::default();
     graph.build(POINTS, &[]);
 
     test_impl(
@@ -138,7 +138,7 @@ fn one_bend() {
 
 #[test]
 fn two_bends() {
-    let mut graph = Graph::new();
+    let mut graph = Graph::default();
     graph.build(
         POINTS,
         &[BoundingBox {
