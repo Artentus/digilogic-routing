@@ -184,6 +184,8 @@ pub struct Graph {
 
 impl Graph {
     pub fn build(&mut self, anchor_points: &[Point], bounding_boxes: &[BoundingBox]) {
+        use std::collections::hash_map::Entry;
+
         let have_horizontal_sightline = |y: i32, mut x1: i32, mut x2: i32| -> bool {
             if x1 > x2 {
                 std::mem::swap(&mut x1, &mut x2);
@@ -239,72 +241,130 @@ impl Graph {
         self.y_coords.dedup();
 
         self.node_map.clear();
-
-        for anchor_point in anchor_points.iter().copied() {
-            self.node_map.insert(anchor_point, 0);
-        }
-
-        for anchor_point_a in anchor_points.iter().copied() {
-            for anchor_point_b in anchor_points.iter().copied() {
-                if have_horizontal_sightline(anchor_point_a.y, anchor_point_a.x, anchor_point_b.x)
-                    && have_vertical_sightline(anchor_point_b.x, anchor_point_b.y, anchor_point_a.y)
-                {
-                    self.node_map.insert(
-                        Point {
-                            x: anchor_point_b.x,
-                            y: anchor_point_a.y,
-                        },
-                        0,
-                    );
-                }
-
-                if have_horizontal_sightline(anchor_point_b.y, anchor_point_b.x, anchor_point_a.x)
-                    && have_vertical_sightline(anchor_point_a.x, anchor_point_a.y, anchor_point_b.y)
-                {
-                    self.node_map.insert(
-                        Point {
-                            x: anchor_point_a.x,
-                            y: anchor_point_b.y,
-                        },
-                        0,
-                    );
-                }
-            }
-        }
-
         self.nodes.clear();
 
-        for y in self.y_coords.iter().copied() {
-            let mut prev: Option<u32> = None;
-            for x in self.x_coords.iter().copied() {
-                let point = Point { x, y };
-                if let Some(index) = self.node_map.get_mut(&point) {
-                    *index = self.nodes.push(point);
-
-                    if let Some(prev) = prev {
-                        if have_horizontal_sightline(y, self.nodes[prev].point.x, x) {
-                            self.nodes[prev].neighbors[Direction::PosX] = *index;
-                            self.nodes[*index].neighbors[Direction::NegX] = prev;
-                        }
+        macro_rules! node_index {
+            ($point:expr) => {
+                match self.node_map.entry($point) {
+                    Entry::Occupied(entry) => (*entry.get(), true),
+                    Entry::Vacant(entry) => {
+                        let index = self.nodes.push($point);
+                        entry.insert(index);
+                        (index, false)
                     }
-
-                    prev = Some(*index);
                 }
-            }
+            };
         }
 
-        for x in self.x_coords.iter().copied() {
-            let mut prev: Option<u32> = None;
-            for y in self.y_coords.iter().copied() {
-                if let Some(index) = self.node_map.get(&Point { x, y }).copied() {
-                    if let Some(prev) = prev {
-                        if have_vertical_sightline(x, self.nodes[prev].point.y, y) {
-                            self.nodes[prev].neighbors[Direction::PosY] = index;
-                            self.nodes[index].neighbors[Direction::NegY] = prev;
-                        }
+        for anchor_point in anchor_points.iter().copied() {
+            let (anchor_index, _) = node_index!(anchor_point);
+
+            let x_index = self
+                .x_coords
+                .binary_search(&anchor_point.x)
+                .expect("invalid anchor point");
+            let y_index = self
+                .y_coords
+                .binary_search(&anchor_point.y)
+                .expect("invalid anchor point");
+
+            let mut prev_index = anchor_index;
+            for x in self.x_coords[..x_index].iter().copied().rev() {
+                if have_horizontal_sightline(anchor_point.y, x, anchor_point.x) {
+                    let current_point = Point {
+                        x,
+                        y: anchor_point.y,
+                    };
+
+                    let (current_index, existed) = node_index!(current_point);
+
+                    self.nodes[prev_index].neighbors[Direction::NegX] = current_index;
+                    self.nodes[current_index].neighbors[Direction::PosX] = prev_index;
+
+                    if existed
+                        && (self.nodes[current_index].neighbors[Direction::NegX] != INVALID_INDEX)
+                    {
+                        break;
                     }
 
-                    prev = Some(index);
+                    prev_index = current_index;
+                } else {
+                    break;
+                }
+            }
+
+            let mut prev_index = anchor_index;
+            for x in self.x_coords[(x_index + 1)..].iter().copied() {
+                if have_horizontal_sightline(anchor_point.y, anchor_point.x, x) {
+                    let current_point = Point {
+                        x,
+                        y: anchor_point.y,
+                    };
+
+                    let (current_index, existed) = node_index!(current_point);
+
+                    self.nodes[prev_index].neighbors[Direction::PosX] = current_index;
+                    self.nodes[current_index].neighbors[Direction::NegX] = prev_index;
+
+                    if existed
+                        && (self.nodes[current_index].neighbors[Direction::PosX] != INVALID_INDEX)
+                    {
+                        break;
+                    }
+
+                    prev_index = current_index;
+                } else {
+                    break;
+                }
+            }
+
+            let mut prev_index = anchor_index;
+            for y in self.y_coords[..y_index].iter().copied().rev() {
+                if have_vertical_sightline(anchor_point.x, y, anchor_point.y) {
+                    let current_point = Point {
+                        x: anchor_point.x,
+                        y,
+                    };
+
+                    let (current_index, existed) = node_index!(current_point);
+
+                    self.nodes[prev_index].neighbors[Direction::NegY] = current_index;
+                    self.nodes[current_index].neighbors[Direction::PosY] = prev_index;
+
+                    if existed
+                        && (self.nodes[current_index].neighbors[Direction::NegY] != INVALID_INDEX)
+                    {
+                        break;
+                    }
+
+                    prev_index = current_index;
+                } else {
+                    break;
+                }
+            }
+
+            let mut prev_index = anchor_index;
+            for y in self.y_coords[(y_index + 1)..].iter().copied() {
+                if have_vertical_sightline(anchor_point.x, anchor_point.y, y) {
+                    let current_point = Point {
+                        x: anchor_point.x,
+                        y,
+                    };
+
+                    let (current_index, existed) = node_index!(current_point);
+
+                    self.nodes[prev_index].neighbors[Direction::PosY] = current_index;
+                    self.nodes[current_index].neighbors[Direction::NegY] = prev_index;
+
+                    if existed
+                        && (self.nodes[current_index].neighbors[Direction::PosY] != INVALID_INDEX)
+                    {
+                        break;
+                    }
+
+                    prev_index = current_index;
+                } else {
+                    break;
                 }
             }
         }
