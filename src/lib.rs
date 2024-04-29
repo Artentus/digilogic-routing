@@ -174,6 +174,164 @@ impl IndexMut<u32> for NodeList {
     }
 }
 
+fn have_horizontal_sightline(
+    bounding_boxes: &[BoundingBox],
+    y: i32,
+    mut x1: i32,
+    mut x2: i32,
+) -> bool {
+    if x1 > x2 {
+        std::mem::swap(&mut x1, &mut x2);
+    }
+
+    for &bb in bounding_boxes {
+        if (y < bb.min_y()) || (y > bb.max_y()) {
+            continue;
+        }
+
+        if (x2 <= bb.min_x()) || (x1 >= bb.max_x()) {
+            continue;
+        }
+
+        return false;
+    }
+
+    true
+}
+
+fn have_vertical_sightline(
+    bounding_boxes: &[BoundingBox],
+    x: i32,
+    mut y1: i32,
+    mut y2: i32,
+) -> bool {
+    if y1 > y2 {
+        std::mem::swap(&mut y1, &mut y2);
+    }
+
+    for &bb in bounding_boxes {
+        if (x < bb.min_x()) || (x > bb.max_x()) {
+            continue;
+        }
+
+        if (y2 <= bb.min_y()) || (y1 >= bb.max_y()) {
+            continue;
+        }
+
+        return false;
+    }
+
+    true
+}
+
+fn find_neg_horizontal_cutoff(
+    bounding_boxes: &[BoundingBox],
+    x_coords: &[i32],
+    y: i32,
+    x2: i32,
+    offset: usize,
+) -> usize {
+    if x_coords.len() == 0 {
+        return offset;
+    }
+
+    let center = x_coords.len() / 2;
+    let x1 = x_coords[center];
+
+    if have_horizontal_sightline(bounding_boxes, y, x1, x2) {
+        find_neg_horizontal_cutoff(bounding_boxes, &x_coords[..center], y, x2, offset)
+    } else {
+        find_neg_horizontal_cutoff(
+            bounding_boxes,
+            &x_coords[(center + 1)..],
+            y,
+            x2,
+            offset + center + 1,
+        )
+    }
+}
+
+fn find_pos_horizontal_cutoff(
+    bounding_boxes: &[BoundingBox],
+    x_coords: &[i32],
+    y: i32,
+    x1: i32,
+    offset: usize,
+) -> usize {
+    if x_coords.len() == 0 {
+        return offset;
+    }
+
+    let center = x_coords.len() / 2;
+    let x2 = x_coords[center];
+
+    if have_horizontal_sightline(bounding_boxes, y, x1, x2) {
+        find_pos_horizontal_cutoff(
+            bounding_boxes,
+            &x_coords[(center + 1)..],
+            y,
+            x2,
+            offset + center + 1,
+        )
+    } else {
+        find_pos_horizontal_cutoff(bounding_boxes, &x_coords[..center], y, x2, offset)
+    }
+}
+
+fn find_neg_vertical_cutoff(
+    bounding_boxes: &[BoundingBox],
+    y_coords: &[i32],
+    x: i32,
+    y2: i32,
+    offset: usize,
+) -> usize {
+    if y_coords.len() == 0 {
+        return offset;
+    }
+
+    let center = y_coords.len() / 2;
+    let y1 = y_coords[center];
+
+    if have_vertical_sightline(bounding_boxes, x, y1, y2) {
+        find_neg_vertical_cutoff(bounding_boxes, &y_coords[..center], x, y2, offset)
+    } else {
+        find_neg_vertical_cutoff(
+            bounding_boxes,
+            &y_coords[(center + 1)..],
+            x,
+            y2,
+            offset + center + 1,
+        )
+    }
+}
+
+fn find_pos_vertical_cutoff(
+    bounding_boxes: &[BoundingBox],
+    y_coords: &[i32],
+    x: i32,
+    y1: i32,
+    offset: usize,
+) -> usize {
+    if y_coords.len() == 0 {
+        return offset;
+    }
+
+    let center = y_coords.len() / 2;
+    let y2 = y_coords[center];
+
+    if have_vertical_sightline(bounding_boxes, x, y1, y2) {
+        find_pos_vertical_cutoff(
+            bounding_boxes,
+            &y_coords[(center + 1)..],
+            x,
+            y2,
+            offset + center + 1,
+        )
+    } else {
+        find_pos_vertical_cutoff(bounding_boxes, &y_coords[..center], x, y2, offset)
+    }
+}
+
 #[derive(Default)]
 pub struct Graph {
     x_coords: Vec<i32>,
@@ -185,46 +343,6 @@ pub struct Graph {
 impl Graph {
     pub fn build(&mut self, anchor_points: &[Point], bounding_boxes: &[BoundingBox]) {
         use std::collections::hash_map::Entry;
-
-        let have_horizontal_sightline = |y: i32, mut x1: i32, mut x2: i32| -> bool {
-            if x1 > x2 {
-                std::mem::swap(&mut x1, &mut x2);
-            }
-
-            for &bb in bounding_boxes {
-                if (y < bb.min_y()) || (y > bb.max_y()) {
-                    continue;
-                }
-
-                if (x2 <= bb.min_x()) || (x1 >= bb.max_x()) {
-                    continue;
-                }
-
-                return false;
-            }
-
-            true
-        };
-
-        let have_vertical_sightline = |x: i32, mut y1: i32, mut y2: i32| -> bool {
-            if y1 > y2 {
-                std::mem::swap(&mut y1, &mut y2);
-            }
-
-            for &bb in bounding_boxes {
-                if (x < bb.min_x()) || (x > bb.max_x()) {
-                    continue;
-                }
-
-                if (y2 <= bb.min_y()) || (y1 >= bb.max_y()) {
-                    continue;
-                }
-
-                return false;
-            }
-
-            true
-        };
 
         self.x_coords.clear();
         self.x_coords.reserve(anchor_points.len());
@@ -268,104 +386,116 @@ impl Graph {
                 .binary_search(&anchor_point.y)
                 .expect("invalid anchor point");
 
+            let cutoff = find_neg_horizontal_cutoff(
+                bounding_boxes,
+                &self.x_coords[..x_index],
+                anchor_point.y,
+                anchor_point.x,
+                0,
+            );
             let mut prev_index = anchor_index;
-            for x in self.x_coords[..x_index].iter().copied().rev() {
-                if have_horizontal_sightline(anchor_point.y, x, anchor_point.x) {
-                    let current_point = Point {
-                        x,
-                        y: anchor_point.y,
-                    };
+            for x in self.x_coords[cutoff..x_index].iter().copied().rev() {
+                let current_point = Point {
+                    x,
+                    y: anchor_point.y,
+                };
 
-                    let (current_index, existed) = node_index!(current_point);
+                let (current_index, existed) = node_index!(current_point);
 
-                    self.nodes[prev_index].neighbors[Direction::NegX] = current_index;
-                    self.nodes[current_index].neighbors[Direction::PosX] = prev_index;
+                self.nodes[prev_index].neighbors[Direction::NegX] = current_index;
+                self.nodes[current_index].neighbors[Direction::PosX] = prev_index;
 
-                    if existed
-                        && (self.nodes[current_index].neighbors[Direction::NegX] != INVALID_INDEX)
-                    {
-                        break;
-                    }
-
-                    prev_index = current_index;
-                } else {
+                if existed
+                    && (self.nodes[current_index].neighbors[Direction::NegX] != INVALID_INDEX)
+                {
                     break;
                 }
+
+                prev_index = current_index;
             }
 
+            let cutoff = find_pos_horizontal_cutoff(
+                bounding_boxes,
+                &self.x_coords[(x_index + 1)..],
+                anchor_point.y,
+                anchor_point.x,
+                x_index + 1,
+            );
             let mut prev_index = anchor_index;
-            for x in self.x_coords[(x_index + 1)..].iter().copied() {
-                if have_horizontal_sightline(anchor_point.y, anchor_point.x, x) {
-                    let current_point = Point {
-                        x,
-                        y: anchor_point.y,
-                    };
+            for x in self.x_coords[(x_index + 1)..cutoff].iter().copied() {
+                let current_point = Point {
+                    x,
+                    y: anchor_point.y,
+                };
 
-                    let (current_index, existed) = node_index!(current_point);
+                let (current_index, existed) = node_index!(current_point);
 
-                    self.nodes[prev_index].neighbors[Direction::PosX] = current_index;
-                    self.nodes[current_index].neighbors[Direction::NegX] = prev_index;
+                self.nodes[prev_index].neighbors[Direction::PosX] = current_index;
+                self.nodes[current_index].neighbors[Direction::NegX] = prev_index;
 
-                    if existed
-                        && (self.nodes[current_index].neighbors[Direction::PosX] != INVALID_INDEX)
-                    {
-                        break;
-                    }
-
-                    prev_index = current_index;
-                } else {
+                if existed
+                    && (self.nodes[current_index].neighbors[Direction::PosX] != INVALID_INDEX)
+                {
                     break;
                 }
+
+                prev_index = current_index;
             }
 
+            let cutoff = find_neg_vertical_cutoff(
+                bounding_boxes,
+                &self.y_coords[..y_index],
+                anchor_point.x,
+                anchor_point.y,
+                0,
+            );
             let mut prev_index = anchor_index;
-            for y in self.y_coords[..y_index].iter().copied().rev() {
-                if have_vertical_sightline(anchor_point.x, y, anchor_point.y) {
-                    let current_point = Point {
-                        x: anchor_point.x,
-                        y,
-                    };
+            for y in self.y_coords[cutoff..y_index].iter().copied().rev() {
+                let current_point = Point {
+                    x: anchor_point.x,
+                    y,
+                };
 
-                    let (current_index, existed) = node_index!(current_point);
+                let (current_index, existed) = node_index!(current_point);
 
-                    self.nodes[prev_index].neighbors[Direction::NegY] = current_index;
-                    self.nodes[current_index].neighbors[Direction::PosY] = prev_index;
+                self.nodes[prev_index].neighbors[Direction::NegY] = current_index;
+                self.nodes[current_index].neighbors[Direction::PosY] = prev_index;
 
-                    if existed
-                        && (self.nodes[current_index].neighbors[Direction::NegY] != INVALID_INDEX)
-                    {
-                        break;
-                    }
-
-                    prev_index = current_index;
-                } else {
+                if existed
+                    && (self.nodes[current_index].neighbors[Direction::NegY] != INVALID_INDEX)
+                {
                     break;
                 }
+
+                prev_index = current_index;
             }
 
+            let cutoff = find_pos_vertical_cutoff(
+                bounding_boxes,
+                &self.y_coords[(y_index + 1)..],
+                anchor_point.x,
+                anchor_point.y,
+                y_index + 1,
+            );
             let mut prev_index = anchor_index;
-            for y in self.y_coords[(y_index + 1)..].iter().copied() {
-                if have_vertical_sightline(anchor_point.x, anchor_point.y, y) {
-                    let current_point = Point {
-                        x: anchor_point.x,
-                        y,
-                    };
+            for y in self.y_coords[(y_index + 1)..cutoff].iter().copied() {
+                let current_point = Point {
+                    x: anchor_point.x,
+                    y,
+                };
 
-                    let (current_index, existed) = node_index!(current_point);
+                let (current_index, existed) = node_index!(current_point);
 
-                    self.nodes[prev_index].neighbors[Direction::PosY] = current_index;
-                    self.nodes[current_index].neighbors[Direction::NegY] = prev_index;
+                self.nodes[prev_index].neighbors[Direction::PosY] = current_index;
+                self.nodes[current_index].neighbors[Direction::NegY] = prev_index;
 
-                    if existed
-                        && (self.nodes[current_index].neighbors[Direction::PosY] != INVALID_INDEX)
-                    {
-                        break;
-                    }
-
-                    prev_index = current_index;
-                } else {
+                if existed
+                    && (self.nodes[current_index].neighbors[Direction::PosY] != INVALID_INDEX)
+                {
                     break;
                 }
+
+                prev_index = current_index;
             }
         }
     }
