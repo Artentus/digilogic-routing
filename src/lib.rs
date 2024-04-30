@@ -174,15 +174,8 @@ impl IndexMut<u32> for NodeList {
     }
 }
 
-fn have_horizontal_sightline(
-    bounding_boxes: &[BoundingBox],
-    y: i32,
-    mut x1: i32,
-    mut x2: i32,
-) -> bool {
-    if x1 > x2 {
-        std::mem::swap(&mut x1, &mut x2);
-    }
+fn have_horizontal_sightline(bounding_boxes: &[BoundingBox], y: i32, x1: i32, x2: i32) -> bool {
+    assert!(x1 < x2);
 
     for &bb in bounding_boxes {
         if (y < bb.min_y()) || (y > bb.max_y()) {
@@ -199,15 +192,8 @@ fn have_horizontal_sightline(
     true
 }
 
-fn have_vertical_sightline(
-    bounding_boxes: &[BoundingBox],
-    x: i32,
-    mut y1: i32,
-    mut y2: i32,
-) -> bool {
-    if y1 > y2 {
-        std::mem::swap(&mut y1, &mut y2);
-    }
+fn have_vertical_sightline(bounding_boxes: &[BoundingBox], x: i32, y1: i32, y2: i32) -> bool {
+    assert!(y1 < y2);
 
     for &bb in bounding_boxes {
         if (x < bb.min_x()) || (x > bb.max_x()) {
