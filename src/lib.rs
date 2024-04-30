@@ -270,11 +270,11 @@ fn find_pos_horizontal_cutoff(
             bounding_boxes,
             &x_coords[(center + 1)..],
             y,
-            x2,
+            x1,
             offset + center + 1,
         )
     } else {
-        find_pos_horizontal_cutoff(bounding_boxes, &x_coords[..center], y, x2, offset)
+        find_pos_horizontal_cutoff(bounding_boxes, &x_coords[..center], y, x1, offset)
     }
 }
 
@@ -324,11 +324,11 @@ fn find_pos_vertical_cutoff(
             bounding_boxes,
             &y_coords[(center + 1)..],
             x,
-            y2,
+            y1,
             offset + center + 1,
         )
     } else {
-        find_pos_vertical_cutoff(bounding_boxes, &y_coords[..center], x, y2, offset)
+        find_pos_vertical_cutoff(bounding_boxes, &y_coords[..center], x, y1, offset)
     }
 }
 
