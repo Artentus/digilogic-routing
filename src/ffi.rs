@@ -88,7 +88,8 @@ pub unsafe extern "C" fn RT_graph_new(graph: *mut *mut Graph) -> Result {
 /// `anchor_points`: A list of anchor points to build the graph from.  
 /// `anchor_point_count`: The number of elements in `anchor_points`.  
 /// `bounding_boxes`: A list of bounding boxes to build the graph from.  
-/// `bounding_box_count`: The number of elements in `bounding_boxes`.
+/// `bounding_box_count`: The number of elements in `bounding_boxes`.  
+/// `minimal`: Whether to spend more processing time to ensure the graph is minimal.
 ///
 /// **Returns**  
 /// `RT_RESULT_SUCCESS`: The operation completed successfully.  
@@ -101,6 +102,7 @@ pub unsafe extern "C" fn RT_graph_build(
     anchor_point_count: usize,
     bounding_boxes: *const BoundingBox,
     bounding_box_count: usize,
+    minimal: bool,
 ) -> Result {
     if graph.is_null() || anchor_points.is_null() || bounding_boxes.is_null() {
         return Result::NullPointerError;
@@ -109,7 +111,7 @@ pub unsafe extern "C" fn RT_graph_build(
     let graph = unsafe { &mut *graph };
     let anchor_points = unsafe { std::slice::from_raw_parts(anchor_points, anchor_point_count) };
     let bounding_boxes = unsafe { std::slice::from_raw_parts(bounding_boxes, bounding_box_count) };
-    graph.build(anchor_points, bounding_boxes);
+    graph.build(anchor_points, bounding_boxes, minimal);
 
     Result::Success
 }

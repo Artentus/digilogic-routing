@@ -78,10 +78,9 @@ fn test_impl(
     assert!(expected_matches.iter().all(|i| *i))
 }
 
-#[test]
-fn straight() {
+fn straight_impl(minimal: bool) {
     let mut graph = Graph::default();
-    graph.build(POINTS, &[]);
+    graph.build(POINTS, &[], minimal);
 
     test_impl(
         &graph,
@@ -106,10 +105,9 @@ fn straight() {
     );
 }
 
-#[test]
-fn one_bend() {
+fn one_bend_impl(minimal: bool) {
     let mut graph = Graph::default();
-    graph.build(POINTS, &[]);
+    graph.build(POINTS, &[], minimal);
 
     test_impl(
         &graph,
@@ -139,8 +137,7 @@ fn one_bend() {
     );
 }
 
-#[test]
-fn two_bends() {
+fn two_bends_impl(minimal: bool) {
     let mut graph = Graph::default();
     graph.build(
         POINTS,
@@ -149,6 +146,7 @@ fn two_bends() {
             half_width: 1,
             half_height: 2,
         }],
+        minimal,
     );
 
     test_impl(
@@ -182,4 +180,34 @@ fn two_bends() {
             },
         ]],
     );
+}
+
+#[test]
+fn straight() {
+    straight_impl(false);
+}
+
+#[test]
+fn straight_minimal() {
+    straight_impl(true);
+}
+
+#[test]
+fn one_bend() {
+    one_bend_impl(false);
+}
+
+#[test]
+fn one_bend_minimal() {
+    one_bend_impl(true);
+}
+
+#[test]
+fn two_bends() {
+    two_bends_impl(false);
+}
+
+#[test]
+fn two_bends_minimal() {
+    two_bends_impl(true);
 }

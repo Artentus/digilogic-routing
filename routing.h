@@ -146,6 +146,7 @@ RT_MUST_USE RT_Result RT_graph_new(struct RT_Graph **graph);
  * `anchor_point_count`: The number of elements in `anchor_points`.
  * `bounding_boxes`: A list of bounding boxes to build the graph from.
  * `bounding_box_count`: The number of elements in `bounding_boxes`.
+ * `minimal`: Whether to spend more processing time to ensure the graph is minimal.
  *
  * **Returns**
  * `RT_RESULT_SUCCESS`: The operation completed successfully.
@@ -156,7 +157,8 @@ RT_Result RT_graph_build(struct RT_Graph *graph,
                          const struct RT_Point *anchor_points,
                          size_t anchor_point_count,
                          const struct RT_BoundingBox *bounding_boxes,
-                         size_t bounding_box_count);
+                         size_t bounding_box_count,
+                         bool minimal);
 
 /**
  * Gets the nodes in a graph.

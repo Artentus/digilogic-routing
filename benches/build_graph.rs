@@ -5,9 +5,14 @@ include!("data/graph.rs");
 
 fn build_graph(c: &mut Criterion) {
     let mut graph = black_box(Graph::default());
+    let mut group = c.benchmark_group("build graph");
 
-    c.bench_function("build graph", |b| {
-        b.iter(|| black_box(graph.build(ANCHOR_POINTS, BOUNDING_BOXES)))
+    group.bench_function("fast", |b| {
+        b.iter(|| black_box(graph.build(ANCHOR_POINTS, BOUNDING_BOXES, false)))
+    });
+
+    group.bench_function("minimal", |b| {
+        b.iter(|| black_box(graph.build(ANCHOR_POINTS, BOUNDING_BOXES, true)))
     });
 }
 
