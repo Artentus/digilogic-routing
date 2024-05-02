@@ -1,3 +1,6 @@
+#![allow(unsafe_code)]
+
+use crate::ffi::*;
 use crate::*;
 
 const POINTS: &[Point] = &[
@@ -47,7 +50,7 @@ fn test_impl(
         )
     };
 
-    assert_eq!(result, RoutingResult::Success);
+    assert_eq!(result, Result::Success);
 
     let mut expected_matches = vec![false; expected.len()];
     for vertex_buffer in vertex_buffers {

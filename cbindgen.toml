@@ -21,14 +21,16 @@ after_includes = """
 #define RT_MUST_USE _Check_return_
 #else
 #define RT_MUST_USE
-#endif"""
+#endif
+
+/**
+ * An index indicating no node being present.
+ */
+#define RT_INVALID_NODE_INDEX (-1)"""
 
 [export]
 prefix = "RT_"
 renaming_overrides_prefixing = false
-
-[export.rename]
-"RoutingResult" = "Result"
 
 [fn]
 must_use = "RT_MUST_USE"
