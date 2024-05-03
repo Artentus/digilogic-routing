@@ -27,6 +27,7 @@ enum RT_Result {
     RT_RESULT_NULL_POINTER_ERROR = 1,
     RT_RESULT_INVALID_OPERATION_ERROR = 2,
     RT_RESULT_BUFFER_OVERFLOW_ERROR = 3,
+    RT_RESULT_UNINITIALIZED_ERROR = 4,
 };
 typedef uint32_t RT_Result;
 
@@ -115,15 +116,24 @@ typedef struct RT_VertexBuffer {
 /**
  * Initializes the thread pool.
  *
+ * **Returns**
+ * `RT_RESULT_SUCCESS`: The operation completed successfully.
+ * `RT_RESULT_INVALID_OPERATION_ERROR`: The function was called more than once.
+ */
+RT_MUST_USE RT_Result RT_init_thread_pool(void);
+
+/**
+ * Gets the number of threads in the pool.
+ *
  * **Parameters**
  * `[out] thread_count`: The number of threads in the pool.
  *
  * **Returns**
  * `RT_RESULT_SUCCESS`: The operation completed successfully.
  * `RT_RESULT_NULL_POINTER_ERROR`: `thread_count` was `NULL`.
- * `RT_RESULT_INVALID_OPERATION_ERROR`: The function was called more than once.
+ * `RT_RESULT_UNINITIALIZED_ERROR`: The thread pool was not initialized yet.
  */
-RT_MUST_USE RT_Result RT_init_thread_pool(size_t *thread_count);
+RT_MUST_USE RT_Result RT_get_thread_count(size_t *thread_count);
 
 /**
  * Creates a new graph.
@@ -204,6 +214,7 @@ RT_MUST_USE RT_Result RT_graph_free(struct RT_Graph *graph);
  * `RT_RESULT_NULL_POINTER_ERROR`: `graph`, `paths`, `vertex_buffers` or `VertexBuffer::vertices` was `NULL`.
  * `RT_RESULT_INVALID_OPERATION_ERROR`: One of the paths had an invalid start or end point.
  * `RT_RESULT_BUFFER_OVERFLOW_ERROR`: The capacity of the vertex buffers was too small to hold all vertices.
+ * `RT_RESULT_UNINITIALIZED_ERROR`: The thread pool was not initialized yet.
  */
 RT_MUST_USE
 RT_Result RT_graph_find_paths(const struct RT_Graph *graph,

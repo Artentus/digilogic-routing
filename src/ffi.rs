@@ -26,9 +26,36 @@ pub enum Result {
     NullPointerError = 1,
     InvalidOperationError = 2,
     BufferOverflowError = 3,
+    UninitializedError = 4,
 }
 
+static NUM_CPUS: AtomicUsize = AtomicUsize::new(0);
+
 /// Initializes the thread pool.
+///
+/// **Returns**  
+/// `RT_RESULT_SUCCESS`: The operation completed successfully.  
+/// `RT_RESULT_INVALID_OPERATION_ERROR`: The function was called more than once.
+#[no_mangle]
+#[must_use]
+pub unsafe extern "C" fn RT_init_thread_pool() -> Result {
+    if NUM_CPUS.load(Ordering::Acquire) == 0 {
+        let num_cpus = num_cpus::get();
+        assert_ne!(num_cpus, 0);
+
+        rayon::ThreadPoolBuilder::new()
+            .num_threads(num_cpus)
+            .build_global()
+            .expect("unable to initialize thread pool");
+
+        NUM_CPUS.store(num_cpus, Ordering::Release);
+        Result::Success
+    } else {
+        Result::InvalidOperationError
+    }
+}
+
+/// Gets the number of threads in the pool.
 ///
 /// **Parameters**  
 /// `[out] thread_count`: The number of threads in the pool.
@@ -36,25 +63,23 @@ pub enum Result {
 /// **Returns**  
 /// `RT_RESULT_SUCCESS`: The operation completed successfully.  
 /// `RT_RESULT_NULL_POINTER_ERROR`: `thread_count` was `NULL`.  
-/// `RT_RESULT_INVALID_OPERATION_ERROR`: The function was called more than once.
+/// `RT_RESULT_UNINITIALIZED_ERROR`: The thread pool was not initialized yet.
 #[no_mangle]
 #[must_use]
-pub unsafe extern "C" fn RT_init_thread_pool(thread_count: *mut usize) -> Result {
+pub unsafe extern "C" fn RT_get_thread_count(thread_count: *mut usize) -> Result {
     if thread_count.is_null() {
         return Result::NullPointerError;
     }
 
-    let num_cpus = num_cpus::get();
-    unsafe {
-        thread_count.write(num_cpus);
-    }
+    let num_cpus = NUM_CPUS.load(Ordering::Acquire);
+    if num_cpus > 0 {
+        unsafe {
+            thread_count.write(num_cpus);
+        }
 
-    match rayon::ThreadPoolBuilder::new()
-        .num_threads(num_cpus)
-        .build_global()
-    {
-        Ok(_) => Result::Success,
-        Err(_) => Result::InvalidOperationError,
+        Result::Success
+    } else {
+        Result::UninitializedError
     }
 }
 
@@ -238,7 +263,8 @@ fn extend_vertex_buffer(
 /// `RT_RESULT_SUCCESS`: The operation completed successfully.  
 /// `RT_RESULT_NULL_POINTER_ERROR`: `graph`, `paths`, `vertex_buffers` or `VertexBuffer::vertices` was `NULL`.  
 /// `RT_RESULT_INVALID_OPERATION_ERROR`: One of the paths had an invalid start or end point.  
-/// `RT_RESULT_BUFFER_OVERFLOW_ERROR`: The capacity of the vertex buffers was too small to hold all vertices.
+/// `RT_RESULT_BUFFER_OVERFLOW_ERROR`: The capacity of the vertex buffers was too small to hold all vertices.  
+/// `RT_RESULT_UNINITIALIZED_ERROR`: The thread pool was not initialized yet.
 #[no_mangle]
 #[must_use]
 pub unsafe extern "C" fn RT_graph_find_paths(
@@ -248,13 +274,18 @@ pub unsafe extern "C" fn RT_graph_find_paths(
     vertex_buffers: *mut VertexBuffer,
     vertex_buffer_capacity: usize,
 ) -> Result {
+    let num_cpus = NUM_CPUS.load(Ordering::Acquire);
+    if num_cpus == 0 {
+        return Result::UninitializedError;
+    }
+    assert_eq!(num_cpus, rayon::current_num_threads());
+
     if graph.is_null() || paths.is_null() || vertex_buffers.is_null() {
         return Result::NullPointerError;
     }
 
     {
-        let vertex_buffers =
-            unsafe { std::slice::from_raw_parts_mut(vertex_buffers, rayon::current_num_threads()) };
+        let vertex_buffers = unsafe { std::slice::from_raw_parts_mut(vertex_buffers, num_cpus) };
 
         for vertex_buffer in vertex_buffers {
             if vertex_buffer.vertices.is_null() {
@@ -288,7 +319,7 @@ pub unsafe extern "C" fn RT_graph_find_paths(
         THREAD_LOCAL_DATA.with_borrow_mut(|ThreadLocalData { path_finder, path }| {
             let buffer_index = *buffer_index.get_or(|| {
                 let buffer_index = next_buffer_index.fetch_add(1, Ordering::SeqCst);
-                assert!(buffer_index < rayon::current_num_threads());
+                assert!(buffer_index < num_cpus);
                 buffer_index
             });
 

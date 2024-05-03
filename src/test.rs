@@ -22,10 +22,25 @@ fn test_impl(
     vertex_buffer_capacity: usize,
     expected: &[&[Vertex]],
 ) {
+    use std::sync::Once;
+
+    static INIT: Once = Once::new();
+    INIT.call_once(|| {
+        let result = unsafe { RT_init_thread_pool() };
+        assert_eq!(result, Result::Success);
+    });
+
     let graph = graph as *const _;
     let path_count = paths.len();
     let paths = paths.as_ptr();
-    let vertex_buffer_count = rayon::current_num_threads();
+
+    let vertex_buffer_count = {
+        let mut thread_count = 0usize;
+        let result = unsafe { RT_get_thread_count((&mut thread_count) as *mut _) };
+        assert_eq!(result, Result::Success);
+        assert_ne!(thread_count, 0);
+        thread_count
+    };
 
     let mut vertex_buffers = Vec::new();
     for _ in 0..vertex_buffer_count {
