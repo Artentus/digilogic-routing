@@ -2,7 +2,8 @@
 #![deny(unsafe_op_in_unsafe_fn)]
 
 use crate::*;
-use std::sync::atomic::{AtomicUsize, Ordering};
+use std::mem::MaybeUninit;
+use std::sync::atomic::{AtomicU16, Ordering};
 use thread_local::ThreadLocal;
 
 #[repr(transparent)]
@@ -29,7 +30,7 @@ pub enum Result {
     UninitializedError = 4,
 }
 
-static NUM_CPUS: AtomicUsize = AtomicUsize::new(0);
+static NUM_CPUS: AtomicU16 = AtomicU16::new(0);
 
 /// Initializes the thread pool.
 ///
@@ -40,11 +41,11 @@ static NUM_CPUS: AtomicUsize = AtomicUsize::new(0);
 #[must_use]
 pub unsafe extern "C" fn RT_init_thread_pool() -> Result {
     if NUM_CPUS.load(Ordering::Acquire) == 0 {
-        let num_cpus = num_cpus::get();
+        let num_cpus: u16 = num_cpus::get().try_into().unwrap_or(u16::MAX);
         assert_ne!(num_cpus, 0);
 
         rayon::ThreadPoolBuilder::new()
-            .num_threads(num_cpus)
+            .num_threads(num_cpus as usize)
             .build_global()
             .expect("unable to initialize thread pool");
 
@@ -66,7 +67,7 @@ pub unsafe extern "C" fn RT_init_thread_pool() -> Result {
 /// `RT_RESULT_UNINITIALIZED_ERROR`: The thread pool was not initialized yet.
 #[no_mangle]
 #[must_use]
-pub unsafe extern "C" fn RT_get_thread_count(thread_count: *mut usize) -> Result {
+pub unsafe extern "C" fn RT_get_thread_count(thread_count: *mut u16) -> Result {
     if thread_count.is_null() {
         return Result::NullPointerError;
     }
@@ -195,9 +196,6 @@ pub unsafe extern "C" fn RT_graph_free(graph: *mut Graph) -> Result {
 #[derive(Debug, Clone, Copy)]
 #[repr(C)]
 pub struct PathDef {
-    /// The ID of the net this path belongs to.  
-    /// Populates the corresponding field in the resulting vertices.
-    pub net_id: u32,
     /// The start point of the path.
     pub start: Point,
     /// The end point of the path.
@@ -207,11 +205,21 @@ pub struct PathDef {
 #[derive(Debug, Clone, Copy, PartialEq)]
 #[repr(C)]
 pub struct Vertex {
-    /// The ID of the net this vertex belongs to.  
-    /// Populated by the corresponding field in the path.
-    pub net_id: u32,
+    /// The X coordinate of the vertex.
     pub x: f32,
+    /// The Y coordinate of the vertex.
     pub y: f32,
+}
+
+#[derive(Debug, Clone, Copy)]
+#[repr(C)]
+pub struct PathRange {
+    /// The vertex offset this range starts at.
+    pub vertex_offset: u32,
+    /// The length of this range.
+    pub vertex_count: u16,
+    /// The index of the vertex buffer this range is in.
+    pub vertex_buffer_index: u16,
 }
 
 #[derive(Clone, Copy)]
@@ -220,33 +228,51 @@ pub struct VertexBuffer {
     /// A list of vertices.
     pub vertices: *mut Vertex,
     /// The number of elements in `vertices`.
-    pub vertex_count: usize,
+    pub vertex_count: u32,
+}
+
+#[inline]
+unsafe fn slice_from_raw_parts_mut_uninit<'a, T>(
+    ptr: *mut T,
+    len: usize,
+) -> &'a mut [MaybeUninit<T>] {
+    unsafe { std::slice::from_raw_parts_mut(ptr as *mut MaybeUninit<T>, len) }
 }
 
 fn extend_vertex_buffer(
     vertex_buffer: &mut VertexBuffer,
-    vertex_buffer_capacity: usize,
+    vertex_buffer_capacity: u32,
+    vertex_buffer_index: u16,
+    path_range: &mut MaybeUninit<PathRange>,
     path: &[Point],
-    net_id: u32,
 ) -> std::result::Result<(), Result> {
-    if vertex_buffer_capacity < (vertex_buffer.vertex_count + path.len()) {
+    let path_len: u16 = path.len().try_into().expect("path too long");
+    let Some(new_vertex_count) = vertex_buffer.vertex_count.checked_add(path_len as u32) else {
+        return Err(Result::BufferOverflowError);
+    };
+    if vertex_buffer_capacity < new_vertex_count {
         return Err(Result::BufferOverflowError);
     }
+
+    path_range.write(PathRange {
+        vertex_offset: vertex_buffer.vertex_count,
+        vertex_count: path_len,
+        vertex_buffer_index,
+    });
 
     for (i, point) in path.iter().copied().enumerate() {
         unsafe {
             vertex_buffer
                 .vertices
-                .add(vertex_buffer.vertex_count + i)
+                .add((vertex_buffer.vertex_count as usize) + i)
                 .write(Vertex {
-                    net_id,
                     x: point.x as f32,
                     y: point.y as f32,
                 });
         }
     }
 
-    vertex_buffer.vertex_count += path.len();
+    vertex_buffer.vertex_count = new_vertex_count;
     Ok(())
 }
 
@@ -255,13 +281,14 @@ fn extend_vertex_buffer(
 /// **Parameters**  
 /// `graph`: The graph to find the paths through.  
 /// `paths`: A list of paths to find.  
-/// `path_count`: The number of elements in `paths`.  
+/// `path_ranges`: A list to write the range of vertices that belongs to each path into.  
+/// `path_count`: The number of elements in `paths` and `path_ranges`.  
 /// `vertex_buffers`: A list of buffers to write the found paths into. There must be exactly as many buffers as threads in the pool.  
 /// `vertex_buffer_capacity`: The maximum number of vertices each buffer in `vertex_buffers` can hold.
 ///
 /// **Returns**  
 /// `RT_RESULT_SUCCESS`: The operation completed successfully.  
-/// `RT_RESULT_NULL_POINTER_ERROR`: `graph`, `paths`, `vertex_buffers` or `VertexBuffer::vertices` was `NULL`.  
+/// `RT_RESULT_NULL_POINTER_ERROR`: `graph`, `paths`, `path_ranges`, `vertex_buffers` or `VertexBuffer::vertices` was `NULL`.  
 /// `RT_RESULT_INVALID_OPERATION_ERROR`: One of the paths had an invalid start or end point.  
 /// `RT_RESULT_BUFFER_OVERFLOW_ERROR`: The capacity of the vertex buffers was too small to hold all vertices.  
 /// `RT_RESULT_UNINITIALIZED_ERROR`: The thread pool was not initialized yet.
@@ -270,22 +297,24 @@ fn extend_vertex_buffer(
 pub unsafe extern "C" fn RT_graph_find_paths(
     graph: *const Graph,
     paths: *const PathDef,
-    path_count: usize,
+    path_ranges: *mut PathRange,
+    path_count: u32,
     vertex_buffers: *mut VertexBuffer,
-    vertex_buffer_capacity: usize,
+    vertex_buffer_capacity: u32,
 ) -> Result {
     let num_cpus = NUM_CPUS.load(Ordering::Acquire);
     if num_cpus == 0 {
         return Result::UninitializedError;
     }
-    assert_eq!(num_cpus, rayon::current_num_threads());
+    assert_eq!(num_cpus as usize, rayon::current_num_threads());
 
-    if graph.is_null() || paths.is_null() || vertex_buffers.is_null() {
+    if graph.is_null() || paths.is_null() || path_ranges.is_null() || vertex_buffers.is_null() {
         return Result::NullPointerError;
     }
 
     {
-        let vertex_buffers = unsafe { std::slice::from_raw_parts_mut(vertex_buffers, num_cpus) };
+        let vertex_buffers =
+            unsafe { std::slice::from_raw_parts_mut(vertex_buffers, num_cpus as usize) };
 
         for vertex_buffer in vertex_buffers {
             if vertex_buffer.vertices.is_null() {
@@ -297,7 +326,8 @@ pub unsafe extern "C" fn RT_graph_find_paths(
     }
 
     let graph = unsafe { &*graph };
-    let paths = unsafe { std::slice::from_raw_parts(paths, path_count) };
+    let paths = unsafe { std::slice::from_raw_parts(paths, path_count as usize) };
+    let path_ranges = unsafe { slice_from_raw_parts_mut_uninit(path_ranges, path_count as usize) };
     let vertex_buffers = SyncPtr(vertex_buffers);
 
     struct ThreadLocalData {
@@ -312,42 +342,48 @@ pub unsafe extern "C" fn RT_graph_find_paths(
         });
     }
 
-    let next_buffer_index: AtomicUsize = AtomicUsize::new(0);
+    let next_buffer_index: AtomicU16 = AtomicU16::new(0);
     let buffer_index = ThreadLocal::new();
 
-    let result = paths.par_iter().copied().try_for_each(|path_def| {
-        THREAD_LOCAL_DATA.with_borrow_mut(|ThreadLocalData { path_finder, path }| {
-            let buffer_index = *buffer_index.get_or(|| {
-                let buffer_index = next_buffer_index.fetch_add(1, Ordering::SeqCst);
-                assert!(buffer_index < num_cpus);
-                buffer_index
-            });
+    let result = paths
+        .par_iter()
+        .copied()
+        .zip(path_ranges.par_iter_mut())
+        .try_for_each(|(path_def, path_range)| {
+            THREAD_LOCAL_DATA.with_borrow_mut(|ThreadLocalData { path_finder, path }| {
+                let vertex_buffer_index = *buffer_index.get_or(|| {
+                    let buffer_index = next_buffer_index.fetch_add(1, Ordering::AcqRel);
+                    assert!(buffer_index < num_cpus);
+                    buffer_index
+                });
 
-            let vertex_buffers = vertex_buffers;
-            let vertex_buffer = unsafe { vertex_buffers.0.add(buffer_index) };
-            let vertex_buffer = unsafe { &mut *vertex_buffer };
+                let vertex_buffers = vertex_buffers;
+                let vertex_buffer = unsafe { vertex_buffers.0.add(vertex_buffer_index as usize) };
+                let vertex_buffer = unsafe { &mut *vertex_buffer };
 
-            path.clear();
+                path.clear();
 
-            match path_finder.find_path_impl(graph, path, path_def.start, path_def.end) {
-                PathFindResult::Found(_) => extend_vertex_buffer(
-                    vertex_buffer,
-                    vertex_buffer_capacity,
-                    &path,
-                    path_def.net_id,
-                ),
-                PathFindResult::NotFound => extend_vertex_buffer(
-                    vertex_buffer,
-                    vertex_buffer_capacity,
-                    &[path_def.start, path_def.end],
-                    path_def.net_id,
-                ),
-                PathFindResult::InvalidStartPoint | PathFindResult::InvalidEndPoint => {
-                    Err(Result::InvalidOperationError)
+                match path_finder.find_path_impl(graph, path, path_def.start, path_def.end) {
+                    PathFindResult::Found(_) => extend_vertex_buffer(
+                        vertex_buffer,
+                        vertex_buffer_capacity,
+                        vertex_buffer_index,
+                        path_range,
+                        &path,
+                    ),
+                    PathFindResult::NotFound => extend_vertex_buffer(
+                        vertex_buffer,
+                        vertex_buffer_capacity,
+                        vertex_buffer_index,
+                        path_range,
+                        &[path_def.start, path_def.end],
+                    ),
+                    PathFindResult::InvalidStartPoint | PathFindResult::InvalidEndPoint => {
+                        Err(Result::InvalidOperationError)
+                    }
                 }
-            }
-        })
-    });
+            })
+        });
 
     match result {
         Ok(_) => Result::Success,

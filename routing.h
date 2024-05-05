@@ -34,13 +34,28 @@ typedef uint32_t RT_Result;
 typedef struct RT_Graph RT_Graph;
 
 typedef struct RT_Point {
+    /**
+     * The X coordinate of the point.
+     */
     int32_t x;
+    /**
+     * The Y coordinate of the point.
+     */
     int32_t y;
 } RT_Point;
 
 typedef struct RT_BoundingBox {
+    /**
+     * The center of the bounding box.
+     */
     struct RT_Point center;
+    /**
+     * The distance from the center to the left and right of the bounding box.
+     */
     uint16_t half_width;
+    /**
+     * The distance from the center to the top and bottom of the bounding box.
+     */
     uint16_t half_height;
 } RT_BoundingBox;
 
@@ -78,11 +93,6 @@ typedef struct RT_Node {
 
 typedef struct RT_PathDef {
     /**
-     * The ID of the net this path belongs to.
-     * Populates the corresponding field in the resulting vertices.
-     */
-    uint32_t net_id;
-    /**
      * The start point of the path.
      */
     struct RT_Point start;
@@ -92,13 +102,29 @@ typedef struct RT_PathDef {
     struct RT_Point end;
 } RT_PathDef;
 
+typedef struct RT_PathRange {
+    /**
+     * The vertex offset this range starts at.
+     */
+    uint32_t vertex_offset;
+    /**
+     * The length of this range.
+     */
+    uint16_t vertex_count;
+    /**
+     * The index of the vertex buffer this range is in.
+     */
+    uint16_t vertex_buffer_index;
+} RT_PathRange;
+
 typedef struct RT_Vertex {
     /**
-     * The ID of the net this vertex belongs to.
-     * Populated by the corresponding field in the path.
+     * The X coordinate of the vertex.
      */
-    uint32_t net_id;
     float x;
+    /**
+     * The Y coordinate of the vertex.
+     */
     float y;
 } RT_Vertex;
 
@@ -110,7 +136,7 @@ typedef struct RT_VertexBuffer {
     /**
      * The number of elements in `vertices`.
      */
-    size_t vertex_count;
+    uint32_t vertex_count;
 } RT_VertexBuffer;
 
 /**
@@ -133,7 +159,7 @@ RT_MUST_USE RT_Result RT_init_thread_pool(void);
  * `RT_RESULT_NULL_POINTER_ERROR`: `thread_count` was `NULL`.
  * `RT_RESULT_UNINITIALIZED_ERROR`: The thread pool was not initialized yet.
  */
-RT_MUST_USE RT_Result RT_get_thread_count(size_t *thread_count);
+RT_MUST_USE RT_Result RT_get_thread_count(uint16_t *thread_count);
 
 /**
  * Creates a new graph.
@@ -205,13 +231,14 @@ RT_MUST_USE RT_Result RT_graph_free(struct RT_Graph *graph);
  * **Parameters**
  * `graph`: The graph to find the paths through.
  * `paths`: A list of paths to find.
- * `path_count`: The number of elements in `paths`.
+ * `path_ranges`: A list to write the range of vertices that belongs to each path into.
+ * `path_count`: The number of elements in `paths` and `path_ranges`.
  * `vertex_buffers`: A list of buffers to write the found paths into. There must be exactly as many buffers as threads in the pool.
  * `vertex_buffer_capacity`: The maximum number of vertices each buffer in `vertex_buffers` can hold.
  *
  * **Returns**
  * `RT_RESULT_SUCCESS`: The operation completed successfully.
- * `RT_RESULT_NULL_POINTER_ERROR`: `graph`, `paths`, `vertex_buffers` or `VertexBuffer::vertices` was `NULL`.
+ * `RT_RESULT_NULL_POINTER_ERROR`: `graph`, `paths`, `path_ranges`, `vertex_buffers` or `VertexBuffer::vertices` was `NULL`.
  * `RT_RESULT_INVALID_OPERATION_ERROR`: One of the paths had an invalid start or end point.
  * `RT_RESULT_BUFFER_OVERFLOW_ERROR`: The capacity of the vertex buffers was too small to hold all vertices.
  * `RT_RESULT_UNINITIALIZED_ERROR`: The thread pool was not initialized yet.
@@ -219,8 +246,9 @@ RT_MUST_USE RT_Result RT_graph_free(struct RT_Graph *graph);
 RT_MUST_USE
 RT_Result RT_graph_find_paths(const struct RT_Graph *graph,
                               const struct RT_PathDef *paths,
-                              size_t path_count,
+                              struct RT_PathRange *path_ranges,
+                              uint32_t path_count,
                               struct RT_VertexBuffer *vertex_buffers,
-                              size_t vertex_buffer_capacity);
+                              uint32_t vertex_buffer_capacity);
 
 #endif /* ROUTING_H */

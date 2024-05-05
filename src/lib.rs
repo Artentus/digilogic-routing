@@ -31,7 +31,9 @@ impl Direction {
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 #[repr(C)]
 pub struct Point {
+    /// The X coordinate of the point.
     pub x: i32,
+    /// The Y coordinate of the point.
     pub y: i32,
 }
 
@@ -45,8 +47,11 @@ impl Point {
 #[derive(Debug, Clone, Copy)]
 #[repr(C)]
 pub struct BoundingBox {
+    /// The center of the bounding box.
     pub center: Point,
+    /// The distance from the center to the left and right of the bounding box.
     pub half_width: u16,
+    /// The distance from the center to the top and bottom of the bounding box.
     pub half_height: u16,
 }
 

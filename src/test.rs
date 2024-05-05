@@ -19,7 +19,7 @@ const POINTS: &[Point] = &[
 fn test_impl(
     graph: &Graph,
     paths: &[PathDef],
-    vertex_buffer_capacity: usize,
+    vertex_buffer_capacity: u32,
     expected: &[&[Vertex]],
 ) {
     use std::sync::Once;
@@ -30,12 +30,17 @@ fn test_impl(
         assert_eq!(result, Result::Success);
     });
 
-    let graph = graph as *const _;
-    let path_count = paths.len();
-    let paths = paths.as_ptr();
+    let mut path_ranges = vec![
+        PathRange {
+            vertex_offset: 0,
+            vertex_count: 0,
+            vertex_buffer_index: 0
+        };
+        paths.len()
+    ];
 
     let vertex_buffer_count = {
-        let mut thread_count = 0usize;
+        let mut thread_count = 0u16;
         let result = unsafe { RT_get_thread_count((&mut thread_count) as *mut _) };
         assert_eq!(result, Result::Success);
         assert_ne!(thread_count, 0);
@@ -45,7 +50,7 @@ fn test_impl(
     let mut vertex_buffers = Vec::new();
     for _ in 0..vertex_buffer_count {
         let mut vertices = Vec::new();
-        vertices.reserve_exact(vertex_buffer_capacity);
+        vertices.reserve_exact(vertex_buffer_capacity as usize);
         let ptr = vertices.as_mut_ptr();
         std::mem::forget(vertices);
 
@@ -55,42 +60,46 @@ fn test_impl(
         });
     }
 
-    let result = unsafe {
-        RT_graph_find_paths(
-            graph,
-            paths,
-            path_count,
-            vertex_buffers.as_mut_ptr(),
-            vertex_buffer_capacity,
-        )
+    let result = {
+        let graph = graph as *const _;
+        let path_count: u32 = paths.len().try_into().expect("too many paths");
+        let paths = paths.as_ptr();
+        let path_ranges = path_ranges.as_mut_ptr();
+
+        unsafe {
+            RT_graph_find_paths(
+                graph,
+                paths,
+                path_ranges,
+                path_count,
+                vertex_buffers.as_mut_ptr(),
+                vertex_buffer_capacity,
+            )
+        }
     };
 
     assert_eq!(result, Result::Success);
 
-    let mut expected_matches = vec![false; expected.len()];
-    for vertex_buffer in vertex_buffers {
-        let vertices = unsafe {
+    let vertex_buffers: Vec<_> = vertex_buffers
+        .into_iter()
+        .map(|vertex_buffer| unsafe {
             Vec::from_raw_parts(
                 vertex_buffer.vertices,
-                vertex_buffer.vertex_count,
-                vertex_buffer_capacity,
+                vertex_buffer.vertex_count as usize,
+                vertex_buffer_capacity as usize,
             )
-        };
+        })
+        .collect();
 
-        println!("{vertices:#?}");
+    assert!(expected.iter().enumerate().all(|(i, &expected)| {
+        let range = path_ranges[i];
 
-        for (i, expected) in expected.iter().enumerate() {
-            if expected_matches[i] {
-                continue;
-            }
+        let start = range.vertex_offset as usize;
+        let end = start + (range.vertex_count as usize);
 
-            if expected.iter().all(|vertex| vertices.contains(vertex)) {
-                expected_matches[i] = true;
-            }
-        }
-    }
-
-    assert!(expected_matches.iter().all(|i| *i))
+        let actual = &vertex_buffers[range.vertex_buffer_index as usize][start..end];
+        actual.eq(expected)
+    }));
 }
 
 fn straight_impl(minimal: bool) {
@@ -100,23 +109,11 @@ fn straight_impl(minimal: bool) {
     test_impl(
         &graph,
         &[PathDef {
-            net_id: 0,
             start: Point { x: 0, y: 2 },
             end: Point { x: 4, y: 2 },
         }],
         2,
-        &[&[
-            Vertex {
-                net_id: 0,
-                x: 0.0,
-                y: 2.0,
-            },
-            Vertex {
-                net_id: 0,
-                x: 4.0,
-                y: 2.0,
-            },
-        ]],
+        &[&[Vertex { x: 0.0, y: 2.0 }, Vertex { x: 4.0, y: 2.0 }]],
     );
 }
 
@@ -127,27 +124,14 @@ fn one_bend_impl(minimal: bool) {
     test_impl(
         &graph,
         &[PathDef {
-            net_id: 0,
             start: Point { x: 0, y: 0 },
             end: Point { x: 4, y: 4 },
         }],
         3,
         &[&[
-            Vertex {
-                net_id: 0,
-                x: 0.0,
-                y: 0.0,
-            },
-            Vertex {
-                net_id: 0,
-                x: 0.0,
-                y: 4.0,
-            },
-            Vertex {
-                net_id: 0,
-                x: 4.0,
-                y: 4.0,
-            },
+            Vertex { x: 0.0, y: 0.0 },
+            Vertex { x: 0.0, y: 4.0 },
+            Vertex { x: 4.0, y: 4.0 },
         ]],
     );
 }
@@ -167,32 +151,15 @@ fn two_bends_impl(minimal: bool) {
     test_impl(
         &graph,
         &[PathDef {
-            net_id: 0,
             start: Point { x: 0, y: 0 },
             end: Point { x: 4, y: 0 },
         }],
         4,
         &[&[
-            Vertex {
-                net_id: 0,
-                x: 0.0,
-                y: 0.0,
-            },
-            Vertex {
-                net_id: 0,
-                x: 0.0,
-                y: 4.0,
-            },
-            Vertex {
-                net_id: 0,
-                x: 4.0,
-                y: 4.0,
-            },
-            Vertex {
-                net_id: 0,
-                x: 4.0,
-                y: 0.0,
-            },
+            Vertex { x: 0.0, y: 0.0 },
+            Vertex { x: 0.0, y: 4.0 },
+            Vertex { x: 4.0, y: 4.0 },
+            Vertex { x: 4.0, y: 0.0 },
         ]],
     );
 }
