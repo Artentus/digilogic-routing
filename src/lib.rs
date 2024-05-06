@@ -691,6 +691,9 @@ impl Graph {
         x_index: usize,
         y_index: usize,
     ) {
+        let bounding_box = usize::try_from(anchor.bounding_box).map(|index| &bounding_boxes[index]);
+        let mut is_in_bounding_box = bounding_box.is_ok();
+
         // Create the first node outside the bounding box.
         for x in self.x_coords[..x_index].iter().copied().rev() {
             let current_point = Point {
@@ -698,9 +701,13 @@ impl Graph {
                 y: anchor.position.y,
             };
 
-            if let Ok(bounding_box) = usize::try_from(anchor.bounding_box) {
-                if bounding_boxes[bounding_box].contains(current_point) {
-                    continue;
+            if is_in_bounding_box {
+                if let Ok(bounding_box) = bounding_box {
+                    if bounding_box.contains(current_point) {
+                        continue;
+                    } else {
+                        is_in_bounding_box = false;
+                    }
                 }
             }
 
@@ -736,6 +743,9 @@ impl Graph {
         x_index: usize,
         y_index: usize,
     ) {
+        let bounding_box = usize::try_from(anchor.bounding_box).map(|index| &bounding_boxes[index]);
+        let mut is_in_bounding_box = bounding_box.is_ok();
+
         // Create the first node outside the bounding box.
         for x in self.x_coords[(x_index + 1)..].iter().copied() {
             let current_point = Point {
@@ -743,9 +753,13 @@ impl Graph {
                 y: anchor.position.y,
             };
 
-            if let Ok(bounding_box) = usize::try_from(anchor.bounding_box) {
-                if bounding_boxes[bounding_box].contains(current_point) {
-                    continue;
+            if is_in_bounding_box {
+                if let Ok(bounding_box) = bounding_box {
+                    if bounding_box.contains(current_point) {
+                        continue;
+                    } else {
+                        is_in_bounding_box = false;
+                    }
                 }
             }
 
@@ -781,6 +795,9 @@ impl Graph {
         x_index: usize,
         y_index: usize,
     ) {
+        let bounding_box = usize::try_from(anchor.bounding_box).map(|index| &bounding_boxes[index]);
+        let mut is_in_bounding_box = bounding_box.is_ok();
+
         // Create the first node outside the bounding box.
         for y in self.y_coords[..y_index].iter().copied().rev() {
             let current_point = Point {
@@ -788,9 +805,13 @@ impl Graph {
                 y,
             };
 
-            if let Ok(bounding_box) = usize::try_from(anchor.bounding_box) {
-                if bounding_boxes[bounding_box].contains(current_point) {
-                    continue;
+            if is_in_bounding_box {
+                if let Ok(bounding_box) = bounding_box {
+                    if bounding_box.contains(current_point) {
+                        continue;
+                    } else {
+                        is_in_bounding_box = false;
+                    }
                 }
             }
 
@@ -826,6 +847,9 @@ impl Graph {
         x_index: usize,
         y_index: usize,
     ) {
+        let bounding_box = usize::try_from(anchor.bounding_box).map(|index| &bounding_boxes[index]);
+        let mut is_in_bounding_box = bounding_box.is_ok();
+
         // Create the first node outside the bounding box.
         for y in self.y_coords[(y_index + 1)..].iter().copied() {
             let current_point = Point {
@@ -833,9 +857,13 @@ impl Graph {
                 y,
             };
 
-            if let Ok(bounding_box) = usize::try_from(anchor.bounding_box) {
-                if bounding_boxes[bounding_box].contains(current_point) {
-                    continue;
+            if is_in_bounding_box {
+                if let Ok(bounding_box) = bounding_box {
+                    if bounding_box.contains(current_point) {
+                        continue;
+                    } else {
+                        is_in_bounding_box = false;
+                    }
                 }
             }
 
@@ -911,6 +939,9 @@ impl Graph {
             anchor.bounding_box.to_usize(),
         );
 
+        let bounding_box = usize::try_from(anchor.bounding_box).map(|index| &bounding_boxes[index]);
+        let mut is_in_bounding_box = bounding_box.is_ok();
+
         // Create edges for all nodes between `neg_x_cutoff` and `x_index`.
         let mut prev_index = anchor_index;
         for x in self.x_coords[neg_x_cutoff..x_index].iter().copied().rev() {
@@ -919,9 +950,13 @@ impl Graph {
                 y: anchor.position.y,
             };
 
-            if let Ok(bounding_box) = usize::try_from(anchor.bounding_box) {
-                if bounding_boxes[bounding_box].contains(current_point) {
-                    continue;
+            if is_in_bounding_box {
+                if let Ok(bounding_box) = bounding_box {
+                    if bounding_box.contains(current_point) {
+                        continue;
+                    } else {
+                        is_in_bounding_box = false;
+                    }
                 }
             }
 
@@ -972,6 +1007,9 @@ impl Graph {
             anchor.bounding_box.to_usize(),
         );
 
+        let bounding_box = usize::try_from(anchor.bounding_box).map(|index| &bounding_boxes[index]);
+        let mut is_in_bounding_box = bounding_box.is_ok();
+
         // Create edges for all nodes between `x_index` and `pos_x_cutoff`.
         let mut prev_index = anchor_index;
         for x in self.x_coords[(x_index + 1)..pos_x_cutoff].iter().copied() {
@@ -980,9 +1018,13 @@ impl Graph {
                 y: anchor.position.y,
             };
 
-            if let Ok(bounding_box) = usize::try_from(anchor.bounding_box) {
-                if bounding_boxes[bounding_box].contains(current_point) {
-                    continue;
+            if is_in_bounding_box {
+                if let Ok(bounding_box) = bounding_box {
+                    if bounding_box.contains(current_point) {
+                        continue;
+                    } else {
+                        is_in_bounding_box = false;
+                    }
                 }
             }
 
@@ -1033,6 +1075,9 @@ impl Graph {
             anchor.bounding_box.to_usize(),
         );
 
+        let bounding_box = usize::try_from(anchor.bounding_box).map(|index| &bounding_boxes[index]);
+        let mut is_in_bounding_box = bounding_box.is_ok();
+
         // Create edges for all nodes between `neg_y_cutoff` and `y_index`.
         let mut prev_index = anchor_index;
         for y in self.y_coords[neg_y_cutoff..y_index].iter().copied().rev() {
@@ -1041,9 +1086,13 @@ impl Graph {
                 y,
             };
 
-            if let Ok(bounding_box) = usize::try_from(anchor.bounding_box) {
-                if bounding_boxes[bounding_box].contains(current_point) {
-                    continue;
+            if is_in_bounding_box {
+                if let Ok(bounding_box) = bounding_box {
+                    if bounding_box.contains(current_point) {
+                        continue;
+                    } else {
+                        is_in_bounding_box = false;
+                    }
                 }
             }
 
@@ -1094,6 +1143,9 @@ impl Graph {
             anchor.bounding_box.to_usize(),
         );
 
+        let bounding_box = usize::try_from(anchor.bounding_box).map(|index| &bounding_boxes[index]);
+        let mut is_in_bounding_box = bounding_box.is_ok();
+
         // Create edges for all nodes between `y_index` and `pos_y_cutoff`.
         let mut prev_index = anchor_index;
         for y in self.y_coords[(y_index + 1)..pos_y_cutoff].iter().copied() {
@@ -1102,9 +1154,13 @@ impl Graph {
                 y,
             };
 
-            if let Ok(bounding_box) = usize::try_from(anchor.bounding_box) {
-                if bounding_boxes[bounding_box].contains(current_point) {
-                    continue;
+            if is_in_bounding_box {
+                if let Ok(bounding_box) = bounding_box {
+                    if bounding_box.contains(current_point) {
+                        continue;
+                    } else {
+                        is_in_bounding_box = false;
+                    }
                 }
             }
 
