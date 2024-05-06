@@ -48,7 +48,6 @@ typedef uint8_t RT_Directions;"""
 [export]
 prefix = "RT_"
 renaming_overrides_prefixing = false
-exclude = ["Directions"]
 
 [fn]
 must_use = "RT_MUST_USE"

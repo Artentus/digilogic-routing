@@ -13,11 +13,99 @@ use std::ops::{Index, IndexMut};
 
 type HashMap<K, V> = ahash::AHashMap<K, V>;
 type PriorityQueue<I, P> = priority_queue::PriorityQueue<I, P, ahash::RandomState>;
-type BoundingBoxIndex = u32;
 type NodeIndex = u32;
 
-const INVALID_BOUNDING_BOX_INDEX: BoundingBoxIndex = BoundingBoxIndex::MAX;
 const INVALID_NODE_INDEX: NodeIndex = NodeIndex::MAX;
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+#[repr(transparent)]
+pub struct BoundingBoxIndex(u32);
+
+impl BoundingBoxIndex {
+    pub const INVALID: Self = {
+        // use a block to prevent cbindgen from exporting
+        Self(u32::MAX)
+    };
+
+    #[inline]
+    pub const fn from_usize(index: usize) -> Option<Self> {
+        if index < (u32::MAX as usize) {
+            Some(Self(index as u32))
+        } else {
+            None
+        }
+    }
+
+    #[inline]
+    pub const fn to_usize(self) -> Option<usize> {
+        if self.0 < u32::MAX {
+            Some(self.0 as usize)
+        } else {
+            None
+        }
+    }
+
+    #[inline]
+    pub const fn from_u32(index: u32) -> Option<Self> {
+        if index < u32::MAX {
+            Some(Self(index))
+        } else {
+            None
+        }
+    }
+
+    #[inline]
+    pub const fn to_u32(self) -> Option<u32> {
+        if self.0 < u32::MAX {
+            Some(self.0)
+        } else {
+            None
+        }
+    }
+}
+
+impl Default for BoundingBoxIndex {
+    #[inline]
+    fn default() -> Self {
+        Self::INVALID
+    }
+}
+
+impl TryFrom<BoundingBoxIndex> for usize {
+    type Error = ();
+
+    #[inline]
+    fn try_from(index: BoundingBoxIndex) -> Result<Self, Self::Error> {
+        index.to_usize().ok_or(())
+    }
+}
+
+impl TryFrom<usize> for BoundingBoxIndex {
+    type Error = ();
+
+    #[inline]
+    fn try_from(index: usize) -> Result<Self, Self::Error> {
+        BoundingBoxIndex::from_usize(index).ok_or(())
+    }
+}
+
+impl TryFrom<BoundingBoxIndex> for u32 {
+    type Error = ();
+
+    #[inline]
+    fn try_from(index: BoundingBoxIndex) -> Result<Self, Self::Error> {
+        index.to_u32().ok_or(())
+    }
+}
+
+impl TryFrom<u32> for BoundingBoxIndex {
+    type Error = ();
+
+    #[inline]
+    fn try_from(index: u32) -> Result<Self, Self::Error> {
+        BoundingBoxIndex::from_u32(index).ok_or(())
+    }
+}
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 #[repr(u8)]
@@ -33,6 +121,7 @@ impl Direction {
 }
 
 bitflags! {
+    /// cbindgen:no-export
     #[derive(Debug, Clone, Copy, PartialEq, Eq)]
     #[repr(transparent)]
     pub struct Directions: u8 {
@@ -56,7 +145,14 @@ impl From<Direction> for Directions {
     }
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+impl Default for Directions {
+    #[inline]
+    fn default() -> Self {
+        Self::ALL
+    }
+}
+
+#[derive(Debug, Default, Clone, Copy, PartialEq, Eq, Hash)]
 #[repr(C)]
 pub struct Point {
     /// The X coordinate of the point.
@@ -67,17 +163,12 @@ pub struct Point {
 
 impl Point {
     #[inline]
-    pub const fn new(x: i32, y: i32) -> Self {
-        Self { x, y }
-    }
-
-    #[inline]
     pub const fn manhatten_distance_to(self, other: Self) -> u32 {
         self.x.abs_diff(other.x) + self.y.abs_diff(other.y)
     }
 }
 
-#[derive(Debug, Clone, Copy)]
+#[derive(Debug, Default, Clone, Copy)]
 #[repr(C)]
 pub struct Anchor {
     /// The position of the anchor.
@@ -92,27 +183,9 @@ impl Anchor {
     #[inline]
     pub const fn new(x: i32, y: i32) -> Self {
         Self {
-            position: Point::new(x, y),
-            bounding_box: INVALID_BOUNDING_BOX_INDEX,
+            position: Point { x, y },
+            bounding_box: BoundingBoxIndex::INVALID,
             connect_directions: Directions::ALL,
-        }
-    }
-
-    #[inline]
-    pub const fn with_bounding_box(self, bounding_box: BoundingBoxIndex) -> Self {
-        Self {
-            position: self.position,
-            bounding_box,
-            connect_directions: self.connect_directions,
-        }
-    }
-
-    #[inline]
-    pub const fn with_connect_directions(self, connect_directions: Directions) -> Self {
-        Self {
-            position: self.position,
-            bounding_box: self.bounding_box,
-            connect_directions,
         }
     }
 }
@@ -309,12 +382,12 @@ fn have_horizontal_sightline(
     y: i32,
     x1: i32,
     x2: i32,
-    ignore_box: BoundingBoxIndex,
+    ignore_box: Option<usize>,
 ) -> bool {
     assert!(x1 < x2);
 
     for (i, &bb) in bounding_boxes.iter().enumerate() {
-        if (ignore_box != INVALID_BOUNDING_BOX_INDEX) && (i == (ignore_box as usize)) {
+        if Some(i) == ignore_box {
             continue;
         }
 
@@ -338,12 +411,12 @@ fn have_vertical_sightline(
     x: i32,
     y1: i32,
     y2: i32,
-    ignore_box: BoundingBoxIndex,
+    ignore_box: Option<usize>,
 ) -> bool {
     assert!(y1 < y2);
 
     for (i, &bb) in bounding_boxes.iter().enumerate() {
-        if (ignore_box != INVALID_BOUNDING_BOX_INDEX) && (i == (ignore_box as usize)) {
+        if Some(i) == ignore_box {
             continue;
         }
 
@@ -369,7 +442,7 @@ fn find_neg_x_cutoff(
     x1_coords: &[i32],
     x2: i32,
     offset: usize,
-    ignore_box: BoundingBoxIndex,
+    ignore_box: Option<usize>,
 ) -> usize {
     if x1_coords.len() == 0 {
         return offset;
@@ -407,7 +480,7 @@ fn find_pos_x_cutoff(
     x1: i32,
     x2_coords: &[i32],
     offset: usize,
-    ignore_box: BoundingBoxIndex,
+    ignore_box: Option<usize>,
 ) -> usize {
     if x2_coords.len() == 0 {
         return offset;
@@ -445,7 +518,7 @@ fn find_neg_y_cutoff(
     y1_coords: &[i32],
     y2: i32,
     offset: usize,
-    ignore_box: BoundingBoxIndex,
+    ignore_box: Option<usize>,
 ) -> usize {
     if y1_coords.len() == 0 {
         return offset;
@@ -483,7 +556,7 @@ fn find_pos_y_cutoff(
     y1: i32,
     y2_coords: &[i32],
     offset: usize,
-    ignore_box: BoundingBoxIndex,
+    ignore_box: Option<usize>,
 ) -> usize {
     if y2_coords.len() == 0 {
         return offset;
@@ -526,13 +599,7 @@ fn include_point_horizontal(
 
     for y in y_coords[..y_index].iter().copied().rev() {
         if node_map.contains_key(&Point { x: point.x, y }) {
-            if have_vertical_sightline(
-                bounding_boxes,
-                point.x,
-                y,
-                point.y,
-                INVALID_BOUNDING_BOX_INDEX,
-            ) {
+            if have_vertical_sightline(bounding_boxes, point.x, y, point.y, None) {
                 return true;
             } else {
                 break;
@@ -542,13 +609,7 @@ fn include_point_horizontal(
 
     for y in y_coords[(y_index + 1)..].iter().copied() {
         if node_map.contains_key(&Point { x: point.x, y }) {
-            if have_vertical_sightline(
-                bounding_boxes,
-                point.x,
-                point.y,
-                y,
-                INVALID_BOUNDING_BOX_INDEX,
-            ) {
+            if have_vertical_sightline(bounding_boxes, point.x, point.y, y, None) {
                 return true;
             } else {
                 break;
@@ -572,13 +633,7 @@ fn include_point_vertical(
 
     for x in x_coords[..x_index].iter().copied().rev() {
         if node_map.contains_key(&Point { x, y: point.y }) {
-            if have_horizontal_sightline(
-                bounding_boxes,
-                point.y,
-                x,
-                point.x,
-                INVALID_BOUNDING_BOX_INDEX,
-            ) {
+            if have_horizontal_sightline(bounding_boxes, point.y, x, point.x, None) {
                 return true;
             } else {
                 break;
@@ -588,13 +643,7 @@ fn include_point_vertical(
 
     for x in x_coords[(x_index + 1)..].iter().copied() {
         if node_map.contains_key(&Point { x, y: point.y }) {
-            if have_horizontal_sightline(
-                bounding_boxes,
-                point.y,
-                point.x,
-                x,
-                INVALID_BOUNDING_BOX_INDEX,
-            ) {
+            if have_horizontal_sightline(bounding_boxes, point.y, point.x, x, None) {
                 return true;
             } else {
                 break;
@@ -647,7 +696,7 @@ impl Graph {
             &self.x_coords[..x_index],
             anchor.position.x,
             0,
-            anchor.bounding_box,
+            anchor.bounding_box.try_into().ok(),
         );
 
         // Create edges for all nodes between `neg_x_cutoff` and `x_index`.
@@ -658,8 +707,8 @@ impl Graph {
                 y: anchor.position.y,
             };
 
-            if anchor.bounding_box != INVALID_BOUNDING_BOX_INDEX {
-                if bounding_boxes[anchor.bounding_box as usize].contains(current_point) {
+            if let Ok(bounding_box) = usize::try_from(anchor.bounding_box) {
+                if bounding_boxes[bounding_box].contains(current_point) {
                     continue;
                 }
             }
@@ -708,7 +757,7 @@ impl Graph {
             anchor.position.x,
             &self.x_coords[(x_index + 1)..],
             x_index + 1,
-            anchor.bounding_box,
+            anchor.bounding_box.try_into().ok(),
         );
 
         // Create edges for all nodes between `x_index` and `pos_x_cutoff`.
@@ -719,8 +768,8 @@ impl Graph {
                 y: anchor.position.y,
             };
 
-            if anchor.bounding_box != INVALID_BOUNDING_BOX_INDEX {
-                if bounding_boxes[anchor.bounding_box as usize].contains(current_point) {
+            if let Ok(bounding_box) = usize::try_from(anchor.bounding_box) {
+                if bounding_boxes[bounding_box].contains(current_point) {
                     continue;
                 }
             }
@@ -769,7 +818,7 @@ impl Graph {
             &self.y_coords[..y_index],
             anchor.position.y,
             0,
-            anchor.bounding_box,
+            anchor.bounding_box.try_into().ok(),
         );
 
         // Create edges for all nodes between `neg_y_cutoff` and `y_index`.
@@ -780,8 +829,8 @@ impl Graph {
                 y,
             };
 
-            if anchor.bounding_box != INVALID_BOUNDING_BOX_INDEX {
-                if bounding_boxes[anchor.bounding_box as usize].contains(current_point) {
+            if let Ok(bounding_box) = usize::try_from(anchor.bounding_box) {
+                if bounding_boxes[bounding_box].contains(current_point) {
                     continue;
                 }
             }
@@ -830,7 +879,7 @@ impl Graph {
             anchor.position.y,
             &self.y_coords[(y_index + 1)..],
             y_index + 1,
-            anchor.bounding_box,
+            anchor.bounding_box.try_into().ok(),
         );
 
         // Create edges for all nodes between `y_index` and `pos_y_cutoff`.
@@ -841,8 +890,8 @@ impl Graph {
                 y,
             };
 
-            if anchor.bounding_box != INVALID_BOUNDING_BOX_INDEX {
-                if bounding_boxes[anchor.bounding_box as usize].contains(current_point) {
+            if let Ok(bounding_box) = usize::try_from(anchor.bounding_box) {
+                if bounding_boxes[bounding_box].contains(current_point) {
                     continue;
                 }
             }
@@ -975,7 +1024,7 @@ impl Graph {
 
         if minimal {
             for anchor in anchors.iter().copied() {
-                if anchor.bounding_box == INVALID_BOUNDING_BOX_INDEX {
+                if anchor.bounding_box == BoundingBoxIndex::INVALID {
                     continue;
                 }
 
@@ -984,7 +1033,7 @@ impl Graph {
             }
 
             for anchor in anchors.iter().copied() {
-                if anchor.bounding_box != INVALID_BOUNDING_BOX_INDEX {
+                if anchor.bounding_box != BoundingBoxIndex::INVALID {
                     continue;
                 }
 
