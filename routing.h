@@ -18,9 +18,26 @@
 #endif
 
 /**
- * An index indicating no node being present.
+ * Indicates no associated bounding box.
+ */
+#define RT_INVALID_BOUNDING_BOX_INDEX (-1)
+
+/**
+ * Indicates no associated node.
  */
 #define RT_INVALID_NODE_INDEX (-1)
+
+enum RT_Directions {
+    RT_DIRECTIONS_POS_X = 1,
+    RT_DIRECTIONS_NEG_X = 2,
+    RT_DIRECTIONS_POS_Y = 4,
+    RT_DIRECTIONS_NEG_Y = 8,
+    RT_DIRECTIONS_X = 3,
+    RT_DIRECTIONS_Y = 12,
+    RT_DIRECTIONS_NONE = 0,
+    RT_DIRECTIONS_ALL = 15,
+};
+typedef uint8_t RT_Directions;
 
 enum RT_Result {
     RT_RESULT_SUCCESS = 0,
@@ -44,6 +61,23 @@ typedef struct RT_Point {
     int32_t y;
 } RT_Point;
 
+typedef uint32_t RT_BoundingBoxIndex;
+
+typedef struct RT_Anchor {
+    /**
+     * The position of the anchor.
+     */
+    struct RT_Point position;
+    /**
+     * The bounding box this anchor belongs to, or `RT_INVALID_BOUNDING_BOX_INDEX` if none.
+     */
+    RT_BoundingBoxIndex bounding_box;
+    /**
+     * The directions in which this anchor connects.
+     */
+    RT_Directions connect_directions;
+} RT_Anchor;
+
 typedef struct RT_BoundingBox {
     /**
      * The center of the bounding box.
@@ -63,19 +97,19 @@ typedef uint32_t RT_NodeIndex;
 
 typedef struct RT_NeighborList {
     /**
-     * The neighbor in the positive X direction.
+     * The neighbor in the positive X direction, or `RT_INVALID_NODE_INDEX` if none.
      */
     RT_NodeIndex pos_x;
     /**
-     * The neighbor in the negative X direction.
+     * The neighbor in the negative X direction, or `RT_INVALID_NODE_INDEX` if none.
      */
     RT_NodeIndex neg_x;
     /**
-     * The neighbor in the positive Y direction.
+     * The neighbor in the positive Y direction, or `RT_INVALID_NODE_INDEX` if none.
      */
     RT_NodeIndex pos_y;
     /**
-     * The neighbor in the negative Y direction.
+     * The neighbor in the negative Y direction, or `RT_INVALID_NODE_INDEX` if none.
      */
     RT_NodeIndex neg_y;
 } RT_NeighborList;
@@ -178,8 +212,8 @@ RT_MUST_USE RT_Result RT_graph_new(struct RT_Graph **graph);
  *
  * **Parameters**
  * `graph`: The graph to build.
- * `anchor_points`: A list of anchor points to build the graph from.
- * `anchor_point_count`: The number of elements in `anchor_points`.
+ * `anchors`: A list of anchor points to build the graph from.
+ * `anchor_count`: The number of elements in `anchors`.
  * `bounding_boxes`: A list of bounding boxes to build the graph from.
  * `bounding_box_count`: The number of elements in `bounding_boxes`.
  * `minimal`: Whether to spend more processing time to ensure the graph is minimal.
@@ -190,8 +224,8 @@ RT_MUST_USE RT_Result RT_graph_new(struct RT_Graph **graph);
  */
 RT_MUST_USE
 RT_Result RT_graph_build(struct RT_Graph *graph,
-                         const struct RT_Point *anchor_points,
-                         size_t anchor_point_count,
+                         const struct RT_Anchor *anchors,
+                         size_t anchor_count,
                          const struct RT_BoundingBox *bounding_boxes,
                          size_t bounding_box_count,
                          bool minimal);

@@ -8,11 +8,11 @@ fn build_graph(c: &mut Criterion) {
     let mut group = c.benchmark_group("build graph");
 
     group.bench_function("fast", |b| {
-        b.iter(|| black_box(graph.build(ANCHOR_POINTS, BOUNDING_BOXES, false)))
+        b.iter(|| black_box(graph.build(ANCHORS, BOUNDING_BOXES, false)))
     });
 
     group.bench_function("minimal", |b| {
-        b.iter(|| black_box(graph.build(ANCHOR_POINTS, BOUNDING_BOXES, true)))
+        b.iter(|| black_box(graph.build(ANCHORS, BOUNDING_BOXES, true)))
     });
 }
 

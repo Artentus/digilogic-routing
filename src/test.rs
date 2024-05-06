@@ -3,17 +3,17 @@
 use crate::ffi::*;
 use crate::*;
 
-const POINTS: &[Point] = &[
-    Point { x: 0, y: 0 },
-    Point { x: 1, y: 0 },
-    Point { x: 2, y: 0 },
-    Point { x: 3, y: 0 },
-    Point { x: 4, y: 0 },
-    Point { x: 0, y: 0 },
-    Point { x: 0, y: 1 },
-    Point { x: 0, y: 2 },
-    Point { x: 0, y: 3 },
-    Point { x: 0, y: 4 },
+const ANCHORS: &[Anchor] = &[
+    Anchor::new(0, 0),
+    Anchor::new(1, 0),
+    Anchor::new(2, 0),
+    Anchor::new(3, 0),
+    Anchor::new(4, 0),
+    Anchor::new(0, 0),
+    Anchor::new(0, 1),
+    Anchor::new(0, 2),
+    Anchor::new(0, 3),
+    Anchor::new(0, 4),
 ];
 
 fn test_impl(
@@ -104,7 +104,7 @@ fn test_impl(
 
 fn straight_impl(minimal: bool) {
     let mut graph = Graph::default();
-    graph.build(POINTS, &[], minimal);
+    graph.build(ANCHORS, &[], minimal);
 
     test_impl(
         &graph,
@@ -119,7 +119,7 @@ fn straight_impl(minimal: bool) {
 
 fn one_bend_impl(minimal: bool) {
     let mut graph = Graph::default();
-    graph.build(POINTS, &[], minimal);
+    graph.build(ANCHORS, &[], minimal);
 
     test_impl(
         &graph,
@@ -139,7 +139,7 @@ fn one_bend_impl(minimal: bool) {
 fn two_bends_impl(minimal: bool) {
     let mut graph = Graph::default();
     graph.build(
-        POINTS,
+        ANCHORS,
         &[BoundingBox {
             center: Point { x: 2, y: 1 },
             half_width: 1,

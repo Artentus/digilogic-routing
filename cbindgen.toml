@@ -24,16 +24,37 @@ after_includes = """
 #endif
 
 /**
- * An index indicating no node being present.
+ * Indicates no associated bounding box.
  */
-#define RT_INVALID_NODE_INDEX (-1)"""
+#define RT_INVALID_BOUNDING_BOX_INDEX (-1)
+
+/**
+ * Indicates no associated node.
+ */
+#define RT_INVALID_NODE_INDEX (-1)
+
+enum RT_Directions {
+    RT_DIRECTIONS_POS_X = 1,
+    RT_DIRECTIONS_NEG_X = 2,
+    RT_DIRECTIONS_POS_Y = 4,
+    RT_DIRECTIONS_NEG_Y = 8,
+    RT_DIRECTIONS_X = 3,
+    RT_DIRECTIONS_Y = 12,
+    RT_DIRECTIONS_NONE = 0,
+    RT_DIRECTIONS_ALL = 15,
+};
+typedef uint8_t RT_Directions;"""
 
 [export]
 prefix = "RT_"
 renaming_overrides_prefixing = false
+exclude = ["Directions"]
 
 [fn]
 must_use = "RT_MUST_USE"
 
 [enum]
 rename_variants = "QualifiedScreamingSnakeCase"
+
+[macro_expansion]
+bitflags = true
