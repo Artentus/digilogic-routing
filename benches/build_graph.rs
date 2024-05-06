@@ -1,7 +1,7 @@
 use criterion::{black_box, criterion_group, criterion_main, Criterion};
 use digilogic_routing::*;
 
-include!("data/graph.rs");
+include!("../test_data/graph.rs");
 
 fn build_graph(c: &mut Criterion) {
     let mut graph = black_box(Graph::default());

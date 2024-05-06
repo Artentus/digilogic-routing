@@ -148,6 +148,24 @@ impl BoundingBox {
     pub const fn max_y(self) -> i32 {
         self.center.y + (self.half_height as i32)
     }
+
+    #[inline]
+    pub const fn width(self) -> u32 {
+        (self.half_width as u32) * 2
+    }
+
+    #[inline]
+    pub const fn height(self) -> u32 {
+        (self.half_height as u32) * 2
+    }
+
+    #[inline]
+    pub const fn contains(self, point: Point) -> bool {
+        (self.min_x() <= point.x)
+            && (self.max_x() >= point.x)
+            && (self.min_y() <= point.y)
+            && (self.max_y() >= point.y)
+    }
 }
 
 /// cbindgen:field-names=[pos_x, neg_x, pos_y, neg_y]
@@ -176,6 +194,10 @@ impl NeighborList {
     }
 
     fn find(&self, node: NodeIndex) -> Option<Direction> {
+        if node == INVALID_NODE_INDEX {
+            return None;
+        }
+
         for dir in Direction::ALL {
             if self[dir] == node {
                 return Some(dir);
@@ -254,10 +276,13 @@ impl NodeList {
     #[inline]
     fn push(&mut self, point: Point) -> NodeIndex {
         let index: NodeIndex = self.0.len().try_into().expect("too many nodes");
+        assert_ne!(index, INVALID_NODE_INDEX, "too many nodes");
+
         self.0.push(Node {
             position: point,
             neighbors: NeighborList::new(),
         });
+
         index
     }
 }
@@ -494,7 +519,6 @@ fn include_point_horizontal(
     y_coords: &[i32],
     node_map: &HashMap<Point, NodeIndex>,
     bounding_boxes: &[BoundingBox],
-    ignore_box: BoundingBoxIndex,
 ) -> bool {
     if node_map.contains_key(&point) {
         return true;
@@ -502,7 +526,13 @@ fn include_point_horizontal(
 
     for y in y_coords[..y_index].iter().copied().rev() {
         if node_map.contains_key(&Point { x: point.x, y }) {
-            if have_vertical_sightline(bounding_boxes, point.x, y, point.y, ignore_box) {
+            if have_vertical_sightline(
+                bounding_boxes,
+                point.x,
+                y,
+                point.y,
+                INVALID_BOUNDING_BOX_INDEX,
+            ) {
                 return true;
             } else {
                 break;
@@ -512,7 +542,13 @@ fn include_point_horizontal(
 
     for y in y_coords[(y_index + 1)..].iter().copied() {
         if node_map.contains_key(&Point { x: point.x, y }) {
-            if have_vertical_sightline(bounding_boxes, point.x, point.y, y, ignore_box) {
+            if have_vertical_sightline(
+                bounding_boxes,
+                point.x,
+                point.y,
+                y,
+                INVALID_BOUNDING_BOX_INDEX,
+            ) {
                 return true;
             } else {
                 break;
@@ -529,7 +565,6 @@ fn include_point_vertical(
     x_coords: &[i32],
     node_map: &HashMap<Point, NodeIndex>,
     bounding_boxes: &[BoundingBox],
-    ignore_box: BoundingBoxIndex,
 ) -> bool {
     if node_map.contains_key(&point) {
         return true;
@@ -537,7 +572,13 @@ fn include_point_vertical(
 
     for x in x_coords[..x_index].iter().copied().rev() {
         if node_map.contains_key(&Point { x, y: point.y }) {
-            if have_horizontal_sightline(bounding_boxes, point.y, x, point.x, ignore_box) {
+            if have_horizontal_sightline(
+                bounding_boxes,
+                point.y,
+                x,
+                point.x,
+                INVALID_BOUNDING_BOX_INDEX,
+            ) {
                 return true;
             } else {
                 break;
@@ -547,7 +588,13 @@ fn include_point_vertical(
 
     for x in x_coords[(x_index + 1)..].iter().copied() {
         if node_map.contains_key(&Point { x, y: point.y }) {
-            if have_horizontal_sightline(bounding_boxes, point.y, point.x, x, ignore_box) {
+            if have_horizontal_sightline(
+                bounding_boxes,
+                point.y,
+                point.x,
+                x,
+                INVALID_BOUNDING_BOX_INDEX,
+            ) {
                 return true;
             } else {
                 break;
@@ -556,6 +603,23 @@ fn include_point_vertical(
     }
 
     false
+}
+
+fn node_index(
+    node_map: &mut HashMap<Point, NodeIndex>,
+    nodes: &mut NodeList,
+    point: Point,
+) -> (u32, bool) {
+    use std::collections::hash_map::Entry;
+
+    match node_map.entry(point) {
+        Entry::Occupied(entry) => (*entry.get(), true),
+        Entry::Vacant(entry) => {
+            let index = nodes.push(point);
+            entry.insert(index);
+            (index, false)
+        }
+    }
 }
 
 #[derive(Default)]
@@ -567,6 +631,312 @@ pub struct Graph {
 }
 
 impl Graph {
+    fn scan_neg_x(
+        &mut self,
+        anchor: Anchor,
+        anchor_index: u32,
+        bounding_boxes: &[BoundingBox],
+        x_index: usize,
+        y_index: usize,
+        minimal: bool,
+    ) {
+        // Find how far in the negative X direction this anchor point has a sightline to.
+        let neg_x_cutoff = find_neg_x_cutoff(
+            bounding_boxes,
+            anchor.position.y,
+            &self.x_coords[..x_index],
+            anchor.position.x,
+            0,
+            anchor.bounding_box,
+        );
+
+        // Create edges for all nodes between `neg_x_cutoff` and `x_index`.
+        let mut prev_index = anchor_index;
+        for x in self.x_coords[neg_x_cutoff..x_index].iter().copied().rev() {
+            let current_point = Point {
+                x,
+                y: anchor.position.y,
+            };
+
+            if anchor.bounding_box != INVALID_BOUNDING_BOX_INDEX {
+                if bounding_boxes[anchor.bounding_box as usize].contains(current_point) {
+                    continue;
+                }
+            }
+
+            if minimal
+                && !include_point_horizontal(
+                    current_point,
+                    y_index,
+                    &self.y_coords,
+                    &self.node_map,
+                    bounding_boxes,
+                )
+            {
+                continue;
+            }
+
+            let (current_index, existed) =
+                node_index(&mut self.node_map, &mut self.nodes, current_point);
+
+            self.nodes[prev_index].neighbors[Direction::NegX] = current_index;
+            self.nodes[current_index].neighbors[Direction::PosX] = prev_index;
+
+            if existed
+                && (self.nodes[current_index].neighbors[Direction::NegX] != INVALID_NODE_INDEX)
+            {
+                break;
+            }
+
+            prev_index = current_index;
+        }
+    }
+
+    fn scan_pos_x(
+        &mut self,
+        anchor: Anchor,
+        anchor_index: u32,
+        bounding_boxes: &[BoundingBox],
+        x_index: usize,
+        y_index: usize,
+        minimal: bool,
+    ) {
+        // Find how far in the positive X direction this anchor point has a sightline to.
+        let pos_x_cutoff = find_pos_x_cutoff(
+            bounding_boxes,
+            anchor.position.y,
+            anchor.position.x,
+            &self.x_coords[(x_index + 1)..],
+            x_index + 1,
+            anchor.bounding_box,
+        );
+
+        // Create edges for all nodes between `x_index` and `pos_x_cutoff`.
+        let mut prev_index = anchor_index;
+        for x in self.x_coords[(x_index + 1)..pos_x_cutoff].iter().copied() {
+            let current_point = Point {
+                x,
+                y: anchor.position.y,
+            };
+
+            if anchor.bounding_box != INVALID_BOUNDING_BOX_INDEX {
+                if bounding_boxes[anchor.bounding_box as usize].contains(current_point) {
+                    continue;
+                }
+            }
+
+            if minimal
+                && !include_point_horizontal(
+                    current_point,
+                    y_index,
+                    &self.y_coords,
+                    &self.node_map,
+                    bounding_boxes,
+                )
+            {
+                continue;
+            }
+
+            let (current_index, existed) =
+                node_index(&mut self.node_map, &mut self.nodes, current_point);
+
+            self.nodes[prev_index].neighbors[Direction::PosX] = current_index;
+            self.nodes[current_index].neighbors[Direction::NegX] = prev_index;
+
+            if existed
+                && (self.nodes[current_index].neighbors[Direction::PosX] != INVALID_NODE_INDEX)
+            {
+                break;
+            }
+
+            prev_index = current_index;
+        }
+    }
+
+    fn scan_neg_y(
+        &mut self,
+        anchor: Anchor,
+        anchor_index: u32,
+        bounding_boxes: &[BoundingBox],
+        x_index: usize,
+        y_index: usize,
+        minimal: bool,
+    ) {
+        // Find how far in the negative Y direction this anchor point has a sightline to.
+        let neg_y_cutoff = find_neg_y_cutoff(
+            bounding_boxes,
+            anchor.position.x,
+            &self.y_coords[..y_index],
+            anchor.position.y,
+            0,
+            anchor.bounding_box,
+        );
+
+        // Create edges for all nodes between `neg_y_cutoff` and `y_index`.
+        let mut prev_index = anchor_index;
+        for y in self.y_coords[neg_y_cutoff..y_index].iter().copied().rev() {
+            let current_point = Point {
+                x: anchor.position.x,
+                y,
+            };
+
+            if anchor.bounding_box != INVALID_BOUNDING_BOX_INDEX {
+                if bounding_boxes[anchor.bounding_box as usize].contains(current_point) {
+                    continue;
+                }
+            }
+
+            if minimal
+                && !include_point_vertical(
+                    current_point,
+                    x_index,
+                    &self.x_coords,
+                    &self.node_map,
+                    bounding_boxes,
+                )
+            {
+                continue;
+            }
+
+            let (current_index, existed) =
+                node_index(&mut self.node_map, &mut self.nodes, current_point);
+
+            self.nodes[prev_index].neighbors[Direction::NegY] = current_index;
+            self.nodes[current_index].neighbors[Direction::PosY] = prev_index;
+
+            if existed
+                && (self.nodes[current_index].neighbors[Direction::NegY] != INVALID_NODE_INDEX)
+            {
+                break;
+            }
+
+            prev_index = current_index;
+        }
+    }
+
+    fn scan_pos_y(
+        &mut self,
+        anchor: Anchor,
+        anchor_index: u32,
+        bounding_boxes: &[BoundingBox],
+        x_index: usize,
+        y_index: usize,
+        minimal: bool,
+    ) {
+        // Find how far in the positive Y direction this anchor point has a sightline to.
+        let pos_y_cutoff = find_pos_y_cutoff(
+            bounding_boxes,
+            anchor.position.x,
+            anchor.position.y,
+            &self.y_coords[(y_index + 1)..],
+            y_index + 1,
+            anchor.bounding_box,
+        );
+
+        // Create edges for all nodes between `y_index` and `pos_y_cutoff`.
+        let mut prev_index = anchor_index;
+        for y in self.y_coords[(y_index + 1)..pos_y_cutoff].iter().copied() {
+            let current_point = Point {
+                x: anchor.position.x,
+                y,
+            };
+
+            if anchor.bounding_box != INVALID_BOUNDING_BOX_INDEX {
+                if bounding_boxes[anchor.bounding_box as usize].contains(current_point) {
+                    continue;
+                }
+            }
+
+            if minimal
+                && !include_point_vertical(
+                    current_point,
+                    x_index,
+                    &self.x_coords,
+                    &self.node_map,
+                    bounding_boxes,
+                )
+            {
+                continue;
+            }
+
+            let (current_index, existed) =
+                node_index(&mut self.node_map, &mut self.nodes, current_point);
+
+            self.nodes[prev_index].neighbors[Direction::PosY] = current_index;
+            self.nodes[current_index].neighbors[Direction::NegY] = prev_index;
+
+            if existed
+                && (self.nodes[current_index].neighbors[Direction::PosY] != INVALID_NODE_INDEX)
+            {
+                break;
+            }
+
+            prev_index = current_index;
+        }
+    }
+
+    fn scan(
+        &mut self,
+        anchor: Anchor,
+        anchor_index: u32,
+        bounding_boxes: &[BoundingBox],
+        minimal: bool,
+    ) {
+        // Determine coordinate indices of this anchor point.
+        let x_index = self
+            .x_coords
+            .binary_search(&anchor.position.x)
+            .expect("invalid anchor point");
+        let y_index = self
+            .y_coords
+            .binary_search(&anchor.position.y)
+            .expect("invalid anchor point");
+
+        if anchor.connect_directions.contains(Directions::NEG_X) {
+            self.scan_neg_x(
+                anchor,
+                anchor_index,
+                bounding_boxes,
+                x_index,
+                y_index,
+                minimal,
+            );
+        }
+
+        if anchor.connect_directions.contains(Directions::POS_X) {
+            self.scan_pos_x(
+                anchor,
+                anchor_index,
+                bounding_boxes,
+                x_index,
+                y_index,
+                minimal,
+            );
+        }
+
+        if anchor.connect_directions.contains(Directions::NEG_Y) {
+            self.scan_neg_y(
+                anchor,
+                anchor_index,
+                bounding_boxes,
+                x_index,
+                y_index,
+                minimal,
+            );
+        }
+
+        if anchor.connect_directions.contains(Directions::POS_Y) {
+            self.scan_pos_y(
+                anchor,
+                anchor_index,
+                bounding_boxes,
+                x_index,
+                y_index,
+                minimal,
+            );
+        }
+    }
+
     /// Builds the graph.
     ///
     /// If the graph had previously been built, this will reset it and reuse the resources.
@@ -603,214 +973,28 @@ impl Graph {
             }
         }
 
-        macro_rules! node_index {
-            ($point:expr) => {
-                match self.node_map.entry($point) {
-                    Entry::Occupied(entry) => (*entry.get(), true),
-                    Entry::Vacant(entry) => {
-                        let index = self.nodes.push($point);
-                        entry.insert(index);
-                        (index, false)
-                    }
+        if minimal {
+            for anchor in anchors.iter().copied() {
+                if anchor.bounding_box == INVALID_BOUNDING_BOX_INDEX {
+                    continue;
                 }
-            };
-        }
 
-        for anchor in anchors.iter().copied() {
-            let anchor_index = self.node_map[&anchor.position];
-
-            // Determine coordinate indices of this anchor point.
-            let x_index = self
-                .x_coords
-                .binary_search(&anchor.position.x)
-                .expect("invalid anchor point");
-            let y_index = self
-                .y_coords
-                .binary_search(&anchor.position.y)
-                .expect("invalid anchor point");
-
-            if anchor.connect_directions.contains(Directions::NEG_X) {
-                // Find how far in the negative X direction this anchor point has a sightline to.
-                let neg_x_cutoff = find_neg_x_cutoff(
-                    bounding_boxes,
-                    anchor.position.y,
-                    &self.x_coords[..x_index],
-                    anchor.position.x,
-                    0,
-                    anchor.bounding_box,
-                );
-
-                // Create edges for all nodes between `neg_x_cutoff` and `x_index`.
-                let mut prev_index = anchor_index;
-                for x in self.x_coords[neg_x_cutoff..x_index].iter().copied().rev() {
-                    let current_point = Point {
-                        x,
-                        y: anchor.position.y,
-                    };
-
-                    if !minimal
-                        || include_point_horizontal(
-                            current_point,
-                            y_index,
-                            &self.y_coords,
-                            &self.node_map,
-                            bounding_boxes,
-                            anchor.bounding_box,
-                        )
-                    {
-                        let (current_index, existed) = node_index!(current_point);
-
-                        self.nodes[prev_index].neighbors[Direction::NegX] = current_index;
-                        self.nodes[current_index].neighbors[Direction::PosX] = prev_index;
-
-                        if existed
-                            && (self.nodes[current_index].neighbors[Direction::NegX]
-                                != INVALID_NODE_INDEX)
-                        {
-                            break;
-                        }
-
-                        prev_index = current_index;
-                    }
-                }
+                let anchor_index = self.node_map[&anchor.position];
+                self.scan(anchor, anchor_index, bounding_boxes, true);
             }
 
-            if anchor.connect_directions.contains(Directions::POS_X) {
-                // Find how far in the positive X direction this anchor point has a sightline to.
-                let pos_x_cutoff = find_pos_x_cutoff(
-                    bounding_boxes,
-                    anchor.position.y,
-                    anchor.position.x,
-                    &self.x_coords[(x_index + 1)..],
-                    x_index + 1,
-                    anchor.bounding_box,
-                );
-
-                // Create edges for all nodes between `x_index` and `pos_x_cutoff`.
-                let mut prev_index = anchor_index;
-                for x in self.x_coords[(x_index + 1)..pos_x_cutoff].iter().copied() {
-                    let current_point = Point {
-                        x,
-                        y: anchor.position.y,
-                    };
-
-                    if !minimal
-                        || include_point_horizontal(
-                            current_point,
-                            y_index,
-                            &self.y_coords,
-                            &self.node_map,
-                            bounding_boxes,
-                            anchor.bounding_box,
-                        )
-                    {
-                        let (current_index, existed) = node_index!(current_point);
-
-                        self.nodes[prev_index].neighbors[Direction::PosX] = current_index;
-                        self.nodes[current_index].neighbors[Direction::NegX] = prev_index;
-
-                        if existed
-                            && (self.nodes[current_index].neighbors[Direction::PosX]
-                                != INVALID_NODE_INDEX)
-                        {
-                            break;
-                        }
-
-                        prev_index = current_index;
-                    }
+            for anchor in anchors.iter().copied() {
+                if anchor.bounding_box != INVALID_BOUNDING_BOX_INDEX {
+                    continue;
                 }
+
+                let anchor_index = self.node_map[&anchor.position];
+                self.scan(anchor, anchor_index, bounding_boxes, true);
             }
-
-            if anchor.connect_directions.contains(Directions::NEG_Y) {
-                // Find how far in the negative Y direction this anchor point has a sightline to.
-                let neg_y_cutoff = find_neg_y_cutoff(
-                    bounding_boxes,
-                    anchor.position.x,
-                    &self.y_coords[..y_index],
-                    anchor.position.y,
-                    0,
-                    anchor.bounding_box,
-                );
-
-                // Create edges for all nodes between `neg_y_cutoff` and `y_index`.
-                let mut prev_index = anchor_index;
-                for y in self.y_coords[neg_y_cutoff..y_index].iter().copied().rev() {
-                    let current_point = Point {
-                        x: anchor.position.x,
-                        y,
-                    };
-
-                    if !minimal
-                        || include_point_vertical(
-                            current_point,
-                            x_index,
-                            &self.x_coords,
-                            &self.node_map,
-                            bounding_boxes,
-                            anchor.bounding_box,
-                        )
-                    {
-                        let (current_index, existed) = node_index!(current_point);
-
-                        self.nodes[prev_index].neighbors[Direction::NegY] = current_index;
-                        self.nodes[current_index].neighbors[Direction::PosY] = prev_index;
-
-                        if existed
-                            && (self.nodes[current_index].neighbors[Direction::NegY]
-                                != INVALID_NODE_INDEX)
-                        {
-                            break;
-                        }
-
-                        prev_index = current_index;
-                    }
-                }
-            }
-
-            if anchor.connect_directions.contains(Directions::POS_Y) {
-                // Find how far in the positive Y direction this anchor point has a sightline to.
-                let pos_y_cutoff = find_pos_y_cutoff(
-                    bounding_boxes,
-                    anchor.position.x,
-                    anchor.position.y,
-                    &self.y_coords[(y_index + 1)..],
-                    y_index + 1,
-                    anchor.bounding_box,
-                );
-
-                // Create edges for all nodes between `y_index` and `pos_y_cutoff`.
-                let mut prev_index = anchor_index;
-                for y in self.y_coords[(y_index + 1)..pos_y_cutoff].iter().copied() {
-                    let current_point = Point {
-                        x: anchor.position.x,
-                        y,
-                    };
-
-                    if !minimal
-                        || include_point_vertical(
-                            current_point,
-                            x_index,
-                            &self.x_coords,
-                            &self.node_map,
-                            bounding_boxes,
-                            anchor.bounding_box,
-                        )
-                    {
-                        let (current_index, existed) = node_index!(current_point);
-
-                        self.nodes[prev_index].neighbors[Direction::PosY] = current_index;
-                        self.nodes[current_index].neighbors[Direction::NegY] = prev_index;
-
-                        if existed
-                            && (self.nodes[current_index].neighbors[Direction::PosY]
-                                != INVALID_NODE_INDEX)
-                        {
-                            break;
-                        }
-
-                        prev_index = current_index;
-                    }
-                }
+        } else {
+            for anchor in anchors.iter().copied() {
+                let anchor_index = self.node_map[&anchor.position];
+                self.scan(anchor, anchor_index, bounding_boxes, false);
             }
         }
     }

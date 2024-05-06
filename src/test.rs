@@ -193,3 +193,136 @@ fn two_bends() {
 fn two_bends_minimal() {
     two_bends_impl(true);
 }
+
+#[cfg(test)]
+mod visual {
+    use crate::*;
+    use svg::node::element::{Circle, Line, Rectangle, Script};
+
+    include!("../test_data/graph.rs");
+
+    fn svg_out(anchors: &[Anchor], bounding_boxes: &[BoundingBox], graph: &Graph, path: &str) {
+        use std::fmt::Write;
+
+        let anchors: ahash::AHashSet<_> = anchors.iter().map(|anchor| anchor.position).collect();
+        let nodes = graph.nodes();
+
+        let mut document = svg::Document::new()
+            .set("style", "background-color:#303030")
+            .add(Script::new(include_str!("../test_data/svg.js")));
+
+        let mut min_x = i32::MAX;
+        let mut min_y = i32::MAX;
+        let mut max_x = i32::MIN;
+        let mut max_y = i32::MIN;
+
+        for bb in bounding_boxes {
+            min_x = min_x.min(bb.min_x());
+            min_y = min_y.min(bb.min_y());
+            max_x = max_x.max(bb.max_x());
+            max_y = max_y.max(bb.max_y());
+
+            document = document.add(
+                Rectangle::new()
+                    .set("x", bb.min_x())
+                    .set("y", bb.min_y())
+                    .set("width", bb.width())
+                    .set("height", bb.height())
+                    .set("stroke", "coral")
+                    .set("fill", "none"),
+            );
+        }
+
+        for node in nodes {
+            if let Some(pos_x) = node.get_neighbor(Direction::PosX) {
+                let pos_x = &nodes[pos_x];
+
+                document = document.add(
+                    Line::new()
+                        .set("x1", node.position.x)
+                        .set("y1", node.position.y)
+                        .set("x2", pos_x.position.x)
+                        .set("y2", pos_x.position.y)
+                        .set("stroke", "lightblue"),
+                );
+            }
+
+            if let Some(pos_y) = node.get_neighbor(Direction::PosY) {
+                let pos_y = &nodes[pos_y];
+
+                document = document.add(
+                    Line::new()
+                        .set("x1", node.position.x)
+                        .set("y1", node.position.y)
+                        .set("x2", pos_y.position.x)
+                        .set("y2", pos_y.position.y)
+                        .set("stroke", "lightblue"),
+                );
+            }
+        }
+
+        for (index, node) in nodes.iter().enumerate() {
+            min_x = min_x.min(node.position.x);
+            min_y = min_y.min(node.position.y);
+            max_x = max_x.max(node.position.x);
+            max_y = max_y.max(node.position.y);
+
+            let (radius, fill) = if anchors.contains(&node.position) {
+                (2.0, "dodgerblue")
+            } else {
+                (1.5, "lightskyblue")
+            };
+
+            let mut class = String::new();
+            for neighbor_index in Direction::ALL
+                .iter()
+                .filter_map(|&dir| node.get_neighbor(dir))
+            {
+                if class.len() > 0 {
+                    write!(class, " ").unwrap();
+                }
+
+                write!(class, "neighbor-of-anchor{neighbor_index}").unwrap();
+            }
+
+            document = document.add(
+                Circle::new()
+                    .set("id", format!("anchor{index}"))
+                    .set("class", class)
+                    .set("cx", node.position.x)
+                    .set("cy", node.position.y)
+                    .set("r", radius)
+                    .set("fill", fill)
+                    .set("stroke", "none")
+                    .set("onmouseenter", "anchorMouseEnter(this)")
+                    .set("onmouseleave", "anchorMouseLeave(this)"),
+            );
+        }
+
+        document = document.set(
+            "viewBox",
+            (
+                min_x - 10,
+                min_y - 10,
+                max_x - min_x + 20,
+                max_y - min_y + 20,
+            ),
+        );
+
+        svg::save(path, &document).unwrap();
+    }
+
+    #[test]
+    fn fast() {
+        let mut graph = Graph::default();
+        graph.build(ANCHORS, BOUNDING_BOXES, false);
+        svg_out(ANCHORS, BOUNDING_BOXES, &graph, "graph_fast.svg");
+    }
+
+    #[test]
+    fn minimal() {
+        let mut graph = Graph::default();
+        graph.build(ANCHORS, BOUNDING_BOXES, true);
+        svg_out(ANCHORS, BOUNDING_BOXES, &graph, "graph_minimal.svg");
+    }
+}
