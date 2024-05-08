@@ -1526,29 +1526,48 @@ impl PathFinder {
                 return PathFindResult::Found(());
             }
 
-            // Find which direction is straight ahead to apply weights.
-            let straight_dir = self
+            let current_node = &graph.nodes[current_index];
+            let pred = self
                 .predecessor
                 .get(&current_index)
-                .copied()
-                .map(|pred_index| {
-                    graph.nodes[pred_index]
-                        .neighbors
-                        .find(current_index)
-                        .expect("invalid predecessor")
-                });
+                .map(|&pred_index| (pred_index, &graph.nodes[pred_index]));
+
+            // Find which direction is straight ahead to apply weights.
+            let straight_dir = if let Some((pred_index, pred_node)) = pred {
+                let pred_to_current_dir = pred_node
+                    .neighbors
+                    .find(current_index)
+                    .expect("invalid predecessor");
+
+                let current_to_pred_dir = current_node.neighbors.find(pred_index);
+                debug_assert_eq!(current_to_pred_dir, Some(pred_to_current_dir.opposite()));
+
+                Some(pred_to_current_dir)
+            } else {
+                None
+            };
 
             for dir in Direction::ALL {
-                let neighbor_index = graph.nodes[current_index].neighbors[dir];
+                if Some(dir.opposite()) == straight_dir {
+                    debug_assert_eq!(current_node.neighbors[dir], pred.unwrap().0);
+
+                    // The path came from here.
+                    continue;
+                }
+
+                let neighbor_index = current_node.neighbors[dir];
                 if neighbor_index == INVALID_NODE_INDEX {
                     continue;
                 }
 
+                let neighbor_node = &graph.nodes[neighbor_index];
+                debug_assert_eq!(neighbor_node.neighbors[dir.opposite()], current_index);
+
                 // Calculate the new path lenght.
                 let new_g_score = self.g_score[&current_index]
-                    + graph.nodes[current_index]
+                    + current_node
                         .position
-                        .manhatten_distance_to(graph.nodes[neighbor_index].position)
+                        .manhatten_distance_to(neighbor_node.position)
                         * if Some(dir) == straight_dir { 1 } else { 2 };
 
                 // Check whether the new path length is shorter than the previous one.
@@ -1563,10 +1582,8 @@ impl PathFinder {
                     self.predecessor.insert(neighbor_index, current_index);
 
                     // Calculate the new approximate total cost.
-                    let new_f_score = new_g_score
-                        + graph.nodes[neighbor_index]
-                            .position
-                            .manhatten_distance_to(start);
+                    let new_f_score =
+                        new_g_score + neighbor_node.position.manhatten_distance_to(start);
                     self.open_queue.push(neighbor_index, Reverse(new_f_score));
                 }
             }
