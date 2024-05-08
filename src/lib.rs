@@ -406,7 +406,7 @@ fn have_horizontal_sightline(
             continue;
         }
 
-        if (x2 <= bb.min_x()) || (x1 >= bb.max_x()) {
+        if (x2 < bb.min_x()) || (x1 > bb.max_x()) {
             continue;
         }
 
@@ -436,7 +436,7 @@ fn have_vertical_sightline(
             continue;
         }
 
-        if (y2 <= bb.min_y()) || (y1 >= bb.max_y()) {
+        if (y2 < bb.min_y()) || (y1 > bb.max_y()) {
             continue;
         }
 

@@ -91,15 +91,15 @@ fn test_impl(
         })
         .collect();
 
-    assert!(expected.iter().enumerate().all(|(i, &expected)| {
+    for (i, &expected) in expected.iter().enumerate() {
         let range = path_ranges[i];
 
         let start = range.vertex_offset as usize;
         let end = start + (range.vertex_count as usize);
 
         let actual = &vertex_buffers[range.vertex_buffer_index as usize][start..end];
-        actual.eq(expected)
-    }));
+        assert_eq!(actual, expected);
+    }
 }
 
 fn straight_impl(minimal: bool) {
@@ -154,7 +154,7 @@ fn two_bends_impl(minimal: bool) {
             start: Point { x: 0, y: 0 },
             end: Point { x: 4, y: 0 },
         }],
-        4,
+        12,
         &[&[
             Vertex { x: 0.0, y: 0.0 },
             Vertex { x: 0.0, y: 4.0 },
