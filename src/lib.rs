@@ -118,6 +118,16 @@ pub enum Direction {
 
 impl Direction {
     pub const ALL: [Self; 4] = [Self::PosX, Self::NegX, Self::PosY, Self::NegY];
+
+    #[inline]
+    pub const fn opposite(self) -> Self {
+        match self {
+            Self::PosX => Self::NegX,
+            Self::NegX => Self::PosX,
+            Self::PosY => Self::NegY,
+            Self::NegY => Self::PosY,
+        }
+    }
 }
 
 bitflags! {
@@ -1254,6 +1264,106 @@ impl Graph {
         }
     }
 
+    #[cfg(debug_assertions)]
+    fn graph_is_valid(&self) -> bool {
+        for (node_index, node) in self.nodes.0.iter().enumerate() {
+            for dir in Direction::ALL {
+                if let Some(neighbor_index) = node.get_neighbor(dir) {
+                    let Some(neighbor) = self.nodes.0.get(neighbor_index) else {
+                        return false;
+                    };
+
+                    if neighbor.get_neighbor(dir.opposite()) != Some(node_index) {
+                        return false;
+                    }
+
+                    match dir {
+                        Direction::PosX | Direction::NegX => {
+                            if node.position.y != neighbor.position.y {
+                                return false;
+                            }
+                        }
+                        Direction::PosY | Direction::NegY => {
+                            if node.position.x != neighbor.position.x {
+                                return false;
+                            }
+                        }
+                    }
+
+                    match dir {
+                        Direction::PosX => {
+                            if node.position.x >= neighbor.position.x {
+                                return false;
+                            }
+                        }
+                        Direction::NegX => {
+                            if node.position.x <= neighbor.position.x {
+                                return false;
+                            }
+                        }
+                        Direction::PosY => {
+                            if node.position.y >= neighbor.position.y {
+                                return false;
+                            }
+                        }
+                        Direction::NegY => {
+                            if node.position.y <= neighbor.position.y {
+                                return false;
+                            }
+                        }
+                    }
+
+                    let Ok(node_x) = self.x_coords.binary_search(&node.position.x) else {
+                        return false;
+                    };
+
+                    let Ok(neighbor_x) = self.x_coords.binary_search(&neighbor.position.x) else {
+                        return false;
+                    };
+
+                    let Ok(node_y) = self.y_coords.binary_search(&node.position.y) else {
+                        return false;
+                    };
+
+                    let Ok(neighbor_y) = self.y_coords.binary_search(&neighbor.position.y) else {
+                        return false;
+                    };
+
+                    match dir {
+                        Direction::PosX | Direction::NegX => {
+                            let min_x = node_x.min(neighbor_x) + 1;
+                            let max_x = node_x.max(neighbor_x);
+
+                            for &x in &self.x_coords[min_x..max_x] {
+                                if self.node_map.contains_key(&Point {
+                                    x,
+                                    y: node.position.y,
+                                }) {
+                                    return false;
+                                }
+                            }
+                        }
+                        Direction::PosY | Direction::NegY => {
+                            let min_y = node_y.min(neighbor_y) + 1;
+                            let max_y = node_y.max(neighbor_y);
+
+                            for &y in &self.y_coords[min_y..max_y] {
+                                if self.node_map.contains_key(&Point {
+                                    x: node.position.x,
+                                    y,
+                                }) {
+                                    return false;
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+
+        true
+    }
+
     /// Builds the graph.
     ///
     /// If the graph had previously been built, this will reset it and reuse the resources.
@@ -1305,6 +1415,8 @@ impl Graph {
             let anchor_index = self.node_map[&anchor.position];
             self.scan(anchor, anchor_index, bounding_boxes, minimal);
         }
+
+        debug_assert!(self.graph_is_valid());
     }
 
     /// The nodes in the graph.
