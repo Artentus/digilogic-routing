@@ -1264,69 +1264,43 @@ impl Graph {
         }
     }
 
-    fn graph_is_valid(&self) -> bool {
+    #[cfg(debug_assertions)]
+    fn assert_graph_is_valid(&self) {
         for (node_index, node) in self.nodes.0.iter().enumerate() {
             for dir in Direction::ALL {
                 if let Some(neighbor_index) = node.get_neighbor(dir) {
-                    let Some(neighbor) = self.nodes.0.get(neighbor_index) else {
-                        return false;
-                    };
-
-                    if neighbor.get_neighbor(dir.opposite()) != Some(node_index) {
-                        return false;
-                    }
+                    let neighbor = &self.nodes.0[neighbor_index];
+                    assert_eq!(neighbor.get_neighbor(dir.opposite()), Some(node_index));
 
                     match dir {
                         Direction::PosX | Direction::NegX => {
-                            if node.position.y != neighbor.position.y {
-                                return false;
-                            }
+                            assert_eq!(node.position.y, neighbor.position.y);
                         }
                         Direction::PosY | Direction::NegY => {
-                            if node.position.x != neighbor.position.x {
-                                return false;
-                            }
+                            assert_eq!(node.position.x, neighbor.position.x);
                         }
                     }
 
                     match dir {
                         Direction::PosX => {
-                            if node.position.x >= neighbor.position.x {
-                                return false;
-                            }
+                            assert!(node.position.x < neighbor.position.x);
                         }
                         Direction::NegX => {
-                            if node.position.x <= neighbor.position.x {
-                                return false;
-                            }
+                            assert!(node.position.x > neighbor.position.x);
                         }
                         Direction::PosY => {
-                            if node.position.y >= neighbor.position.y {
-                                return false;
-                            }
+                            assert!(node.position.y < neighbor.position.y);
                         }
                         Direction::NegY => {
-                            if node.position.y <= neighbor.position.y {
-                                return false;
-                            }
+                            assert!(node.position.y > neighbor.position.y);
                         }
                     }
 
-                    let Ok(node_x) = self.x_coords.binary_search(&node.position.x) else {
-                        return false;
-                    };
+                    let node_x = self.x_coords.binary_search(&node.position.x).unwrap();
+                    let neighbor_x = self.x_coords.binary_search(&neighbor.position.x).unwrap();
 
-                    let Ok(neighbor_x) = self.x_coords.binary_search(&neighbor.position.x) else {
-                        return false;
-                    };
-
-                    let Ok(node_y) = self.y_coords.binary_search(&node.position.y) else {
-                        return false;
-                    };
-
-                    let Ok(neighbor_y) = self.y_coords.binary_search(&neighbor.position.y) else {
-                        return false;
-                    };
+                    let node_y = self.y_coords.binary_search(&node.position.y).unwrap();
+                    let neighbor_y = self.y_coords.binary_search(&neighbor.position.y).unwrap();
 
                     match dir {
                         Direction::PosX | Direction::NegX => {
@@ -1334,12 +1308,10 @@ impl Graph {
                             let max_x = node_x.max(neighbor_x);
 
                             for &x in &self.x_coords[min_x..max_x] {
-                                if self.node_map.contains_key(&Point {
+                                assert!(!self.node_map.contains_key(&Point {
                                     x,
                                     y: node.position.y,
-                                }) {
-                                    return false;
-                                }
+                                }));
                             }
                         }
                         Direction::PosY | Direction::NegY => {
@@ -1347,21 +1319,20 @@ impl Graph {
                             let max_y = node_y.max(neighbor_y);
 
                             for &y in &self.y_coords[min_y..max_y] {
-                                if self.node_map.contains_key(&Point {
+                                assert!(!self.node_map.contains_key(&Point {
                                     x: node.position.x,
                                     y,
-                                }) {
-                                    return false;
-                                }
+                                }));
                             }
                         }
                     }
                 }
             }
         }
-
-        true
     }
+
+    #[cfg(not(debug_assertions))]
+    fn assert_graph_is_valid(&self) {}
 
     /// Builds the graph.
     ///
@@ -1415,7 +1386,7 @@ impl Graph {
             self.scan(anchor, anchor_index, bounding_boxes, minimal);
         }
 
-        debug_assert!(self.graph_is_valid());
+        self.assert_graph_is_valid();
     }
 
     /// The nodes in the graph.
@@ -1460,11 +1431,35 @@ impl<T> PathFindResult<T> {
 #[derive(Default)]
 pub struct PathFinder {
     g_score: HashMap<NodeIndex, u32>,
-    predecessor: HashMap<NodeIndex, u32>,
+    predecessor: HashMap<NodeIndex, NodeIndex>,
     open_queue: PriorityQueue<NodeIndex, Reverse<u32>>,
 }
 
 impl PathFinder {
+    #[cfg(debug_assertions)]
+    fn assert_data_is_valid(&self, graph: &Graph) {
+        for (&node_index, &pred_index) in &self.predecessor {
+            assert_ne!(node_index, INVALID_NODE_INDEX);
+            assert_ne!(pred_index, INVALID_NODE_INDEX);
+
+            let node = &graph.nodes[node_index];
+            let pred = &graph.nodes[pred_index];
+
+            let node_to_pred_dir = node.neighbors.find(pred_index);
+            let pred_to_node_dir = pred.neighbors.find(node_index);
+
+            assert!(node_to_pred_dir.is_some());
+            assert!(pred_to_node_dir.is_some());
+            assert_eq!(
+                node_to_pred_dir.unwrap(),
+                pred_to_node_dir.unwrap().opposite()
+            );
+        }
+    }
+
+    #[cfg(not(debug_assertions))]
+    fn assert_data_is_valid(&self, _graph: &Graph) {}
+
     fn build_path(&self, graph: &Graph, path: &mut Vec<Point>, start_index: NodeIndex) {
         assert_eq!(path.len(), 0);
 
@@ -1522,6 +1517,7 @@ impl PathFinder {
         while let Some((current_index, _)) = self.open_queue.pop() {
             // Shortest path found, construct it and return.
             if current_index == start_index {
+                self.assert_data_is_valid(graph);
                 self.build_path(graph, path, start_index);
                 return PathFindResult::Found(());
             }
