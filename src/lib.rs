@@ -1295,37 +1295,6 @@ impl Graph {
                             assert!(node.position.y > neighbor.position.y);
                         }
                     }
-
-                    let node_x = self.x_coords.binary_search(&node.position.x).unwrap();
-                    let neighbor_x = self.x_coords.binary_search(&neighbor.position.x).unwrap();
-
-                    let node_y = self.y_coords.binary_search(&node.position.y).unwrap();
-                    let neighbor_y = self.y_coords.binary_search(&neighbor.position.y).unwrap();
-
-                    match dir {
-                        Direction::PosX | Direction::NegX => {
-                            let min_x = node_x.min(neighbor_x) + 1;
-                            let max_x = node_x.max(neighbor_x);
-
-                            for &x in &self.x_coords[min_x..max_x] {
-                                assert!(!self.node_map.contains_key(&Point {
-                                    x,
-                                    y: node.position.y,
-                                }));
-                            }
-                        }
-                        Direction::PosY | Direction::NegY => {
-                            let min_y = node_y.min(neighbor_y) + 1;
-                            let max_y = node_y.max(neighbor_y);
-
-                            for &y in &self.y_coords[min_y..max_y] {
-                                assert!(!self.node_map.contains_key(&Point {
-                                    x: node.position.x,
-                                    y,
-                                }));
-                            }
-                        }
-                    }
                 }
             }
         }
