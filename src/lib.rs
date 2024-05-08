@@ -1264,7 +1264,6 @@ impl Graph {
         }
     }
 
-    #[cfg(debug_assertions)]
     fn graph_is_valid(&self) -> bool {
         for (node_index, node) in self.nodes.0.iter().enumerate() {
             for dir in Direction::ALL {
