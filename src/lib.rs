@@ -119,6 +119,7 @@ pub enum Direction {
 impl Direction {
     pub const ALL: [Self; 4] = [Self::PosX, Self::NegX, Self::PosY, Self::NegY];
 
+    /// Gets the opposite direction of this one.
     #[inline]
     pub const fn opposite(self) -> Self {
         match self {
@@ -276,6 +277,14 @@ impl NeighborList {
         )
     }
 
+    #[inline]
+    fn count(&self) -> usize {
+        (self.0 != INVALID_NODE_INDEX) as usize
+            + (self.1 != INVALID_NODE_INDEX) as usize
+            + (self.2 != INVALID_NODE_INDEX) as usize
+            + (self.3 != INVALID_NODE_INDEX) as usize
+    }
+
     fn find(&self, node: NodeIndex) -> Option<Direction> {
         if node == INVALID_NODE_INDEX {
             return None;
@@ -327,6 +336,12 @@ pub struct Node {
 }
 
 impl Node {
+    /// The number of neighbors this node has.
+    #[inline]
+    pub fn neighbor_count(&self) -> usize {
+        self.neighbors.count()
+    }
+
     /// Gets the index of the nodes neighbor in the specified direction.
     #[inline]
     pub fn get_neighbor(&self, dir: Direction) -> Option<usize> {
@@ -1474,6 +1489,13 @@ impl PathFinder {
         let Some(end_index) = graph.find_node_impl(end) else {
             return PathFindResult::InvalidEndPoint;
         };
+
+        let start_node = &graph.nodes[start_index];
+        let end_node = &graph.nodes[end_index];
+        if (start_node.neighbor_count() == 0) || (end_node.neighbor_count() == 0) {
+            // There cannot possibly be a path, abort.
+            return PathFindResult::NotFound;
+        }
 
         self.g_score.clear();
         self.predecessor.clear();
