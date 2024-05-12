@@ -1,3 +1,4 @@
+#[allow(dead_code)]
 macro_rules! bbi {
     ($index:literal) => {
         match BoundingBoxIndex::from_u32($index) {
@@ -7,6 +8,7 @@ macro_rules! bbi {
     }
 }
 
+#[allow(dead_code)]
 const ANCHORS: &[Anchor] = &[
     Anchor {
         position: Point { x: 949, y: 1590 },
@@ -5460,6 +5462,7 @@ const ANCHORS: &[Anchor] = &[
     },
 ];
 
+#[allow(dead_code)]
 const BOUNDING_BOXES: &[BoundingBox] = &[
     BoundingBox {
         center: Point { x: 987, y: 1620 },
@@ -6170,5 +6173,1624 @@ const BOUNDING_BOXES: &[BoundingBox] = &[
         center: Point { x: -473, y: -460 },
         half_width: 36,
         half_height: 29,
+    },
+];
+
+#[allow(dead_code)]
+struct Port {
+    net_id: usize,
+    position: Point,
+}
+
+#[allow(dead_code)]
+macro_rules! ni {
+    ($v:literal) => { $v };
+}
+
+#[allow(dead_code)]
+const PORTS: &[Port] = &[
+    Port {
+        net_id: ni!(20),
+        position: Point { x: 960, y: 1620 },
+    },
+    Port {
+        net_id: ni!(104),
+        position: Point { x: 860, y: 1600 },
+    },
+    Port {
+        net_id: ni!(61),
+        position: Point { x: 860, y: 1620 },
+    },
+    Port {
+        net_id: ni!(20),
+        position: Point { x: 914, y: 1610 },
+    },
+    Port {
+        net_id: ni!(95),
+        position: Point { x: 620, y: 400 },
+    },
+    Port {
+        net_id: ni!(113),
+        position: Point { x: 620, y: 420 },
+    },
+    Port {
+        net_id: ni!(104),
+        position: Point { x: 674, y: 410 },
+    },
+    Port {
+        net_id: ni!(25),
+        position: Point { x: 260, y: 100 },
+    },
+    Port {
+        net_id: ni!(44),
+        position: Point { x: 260, y: 120 },
+    },
+    Port {
+        net_id: ni!(95),
+        position: Point { x: 314, y: 110 },
+    },
+    Port {
+        net_id: ni!(3),
+        position: Point { x: 140, y: 20 },
+    },
+    Port {
+        net_id: ni!(14),
+        position: Point { x: 140, y: 40 },
+    },
+    Port {
+        net_id: ni!(25),
+        position: Point { x: 194, y: 30 },
+    },
+    Port {
+        net_id: ni!(2),
+        position: Point { x: 20, y: 40 },
+    },
+    Port {
+        net_id: ni!(12),
+        position: Point { x: 20, y: 60 },
+    },
+    Port {
+        net_id: ni!(14),
+        position: Point { x: 74, y: 50 },
+    },
+    Port {
+        net_id: ni!(39),
+        position: Point { x: 140, y: 160 },
+    },
+    Port {
+        net_id: ni!(51),
+        position: Point { x: 140, y: 180 },
+    },
+    Port {
+        net_id: ni!(44),
+        position: Point { x: 194, y: 170 },
+    },
+    Port {
+        net_id: ni!(10),
+        position: Point { x: 20, y: 120 },
+    },
+    Port {
+        net_id: ni!(16),
+        position: Point { x: 20, y: 140 },
+    },
+    Port {
+        net_id: ni!(39),
+        position: Point { x: 74, y: 130 },
+    },
+    Port {
+        net_id: ni!(26),
+        position: Point { x: 20, y: 200 },
+    },
+    Port {
+        net_id: ni!(40),
+        position: Point { x: 20, y: 220 },
+    },
+    Port {
+        net_id: ni!(51),
+        position: Point { x: 74, y: 210 },
+    },
+    Port {
+        net_id: ni!(126),
+        position: Point { x: 500, y: 700 },
+    },
+    Port {
+        net_id: ni!(115),
+        position: Point { x: 500, y: 720 },
+    },
+    Port {
+        net_id: ni!(113),
+        position: Point { x: 554, y: 710 },
+    },
+    Port {
+        net_id: ni!(119),
+        position: Point { x: 380, y: 460 },
+    },
+    Port {
+        net_id: ni!(135),
+        position: Point { x: 380, y: 480 },
+    },
+    Port {
+        net_id: ni!(126),
+        position: Point { x: 434, y: 470 },
+    },
+    Port {
+        net_id: ni!(80),
+        position: Point { x: 260, y: 340 },
+    },
+    Port {
+        net_id: ni!(103),
+        position: Point { x: 260, y: 360 },
+    },
+    Port {
+        net_id: ni!(119),
+        position: Point { x: 314, y: 350 },
+    },
+    Port {
+        net_id: ni!(3),
+        position: Point { x: 20, y: 280 },
+    },
+    Port {
+        net_id: ni!(0),
+        position: Point { x: 20, y: 300 },
+    },
+    Port {
+        net_id: ni!(80),
+        position: Point { x: 74, y: 290 },
+    },
+    Port {
+        net_id: ni!(96),
+        position: Point { x: 140, y: 400 },
+    },
+    Port {
+        net_id: ni!(118),
+        position: Point { x: 140, y: 420 },
+    },
+    Port {
+        net_id: ni!(103),
+        position: Point { x: 194, y: 410 },
+    },
+    Port {
+        net_id: ni!(5),
+        position: Point { x: 20, y: 360 },
+    },
+    Port {
+        net_id: ni!(16),
+        position: Point { x: 20, y: 380 },
+    },
+    Port {
+        net_id: ni!(96),
+        position: Point { x: 74, y: 370 },
+    },
+    Port {
+        net_id: ni!(26),
+        position: Point { x: 20, y: 440 },
+    },
+    Port {
+        net_id: ni!(40),
+        position: Point { x: 20, y: 460 },
+    },
+    Port {
+        net_id: ni!(118),
+        position: Point { x: 74, y: 450 },
+    },
+    Port {
+        net_id: ni!(17),
+        position: Point { x: 260, y: 580 },
+    },
+    Port {
+        net_id: ni!(35),
+        position: Point { x: 260, y: 600 },
+    },
+    Port {
+        net_id: ni!(135),
+        position: Point { x: 314, y: 590 },
+    },
+    Port {
+        net_id: ni!(1),
+        position: Point { x: 20, y: 520 },
+    },
+    Port {
+        net_id: ni!(2),
+        position: Point { x: 20, y: 540 },
+    },
+    Port {
+        net_id: ni!(17),
+        position: Point { x: 74, y: 530 },
+    },
+    Port {
+        net_id: ni!(31),
+        position: Point { x: 140, y: 640 },
+    },
+    Port {
+        net_id: ni!(47),
+        position: Point { x: 140, y: 660 },
+    },
+    Port {
+        net_id: ni!(35),
+        position: Point { x: 194, y: 650 },
+    },
+    Port {
+        net_id: ni!(0),
+        position: Point { x: 20, y: 600 },
+    },
+    Port {
+        net_id: ni!(10),
+        position: Point { x: 20, y: 620 },
+    },
+    Port {
+        net_id: ni!(31),
+        position: Point { x: 74, y: 610 },
+    },
+    Port {
+        net_id: ni!(16),
+        position: Point { x: 20, y: 680 },
+    },
+    Port {
+        net_id: ni!(26),
+        position: Point { x: 20, y: 700 },
+    },
+    Port {
+        net_id: ni!(47),
+        position: Point { x: 74, y: 690 },
+    },
+    Port {
+        net_id: ni!(108),
+        position: Point { x: 380, y: 940 },
+    },
+    Port {
+        net_id: ni!(123),
+        position: Point { x: 380, y: 960 },
+    },
+    Port {
+        net_id: ni!(115),
+        position: Point { x: 434, y: 950 },
+    },
+    Port {
+        net_id: ni!(72),
+        position: Point { x: 260, y: 820 },
+    },
+    Port {
+        net_id: ni!(91),
+        position: Point { x: 260, y: 840 },
+    },
+    Port {
+        net_id: ni!(108),
+        position: Point { x: 314, y: 830 },
+    },
+    Port {
+        net_id: ni!(3),
+        position: Point { x: 20, y: 760 },
+    },
+    Port {
+        net_id: ni!(2),
+        position: Point { x: 20, y: 780 },
+    },
+    Port {
+        net_id: ni!(72),
+        position: Point { x: 74, y: 770 },
+    },
+    Port {
+        net_id: ni!(85),
+        position: Point { x: 140, y: 880 },
+    },
+    Port {
+        net_id: ni!(107),
+        position: Point { x: 140, y: 900 },
+    },
+    Port {
+        net_id: ni!(91),
+        position: Point { x: 194, y: 890 },
+    },
+    Port {
+        net_id: ni!(0),
+        position: Point { x: 20, y: 840 },
+    },
+    Port {
+        net_id: ni!(10),
+        position: Point { x: 20, y: 860 },
+    },
+    Port {
+        net_id: ni!(85),
+        position: Point { x: 74, y: 850 },
+    },
+    Port {
+        net_id: ni!(32),
+        position: Point { x: 20, y: 920 },
+    },
+    Port {
+        net_id: ni!(40),
+        position: Point { x: 20, y: 940 },
+    },
+    Port {
+        net_id: ni!(107),
+        position: Point { x: 74, y: 930 },
+    },
+    Port {
+        net_id: ni!(138),
+        position: Point { x: 260, y: 1060 },
+    },
+    Port {
+        net_id: ni!(29),
+        position: Point { x: 260, y: 1080 },
+    },
+    Port {
+        net_id: ni!(123),
+        position: Point { x: 314, y: 1070 },
+    },
+    Port {
+        net_id: ni!(1),
+        position: Point { x: 20, y: 1000 },
+    },
+    Port {
+        net_id: ni!(2),
+        position: Point { x: 20, y: 1020 },
+    },
+    Port {
+        net_id: ni!(138),
+        position: Point { x: 74, y: 1010 },
+    },
+    Port {
+        net_id: ni!(24),
+        position: Point { x: 140, y: 1120 },
+    },
+    Port {
+        net_id: ni!(38),
+        position: Point { x: 140, y: 1140 },
+    },
+    Port {
+        net_id: ni!(29),
+        position: Point { x: 194, y: 1130 },
+    },
+    Port {
+        net_id: ni!(12),
+        position: Point { x: 20, y: 1080 },
+    },
+    Port {
+        net_id: ni!(10),
+        position: Point { x: 20, y: 1100 },
+    },
+    Port {
+        net_id: ni!(24),
+        position: Point { x: 74, y: 1090 },
+    },
+    Port {
+        net_id: ni!(32),
+        position: Point { x: 20, y: 1160 },
+    },
+    Port {
+        net_id: ni!(40),
+        position: Point { x: 20, y: 1180 },
+    },
+    Port {
+        net_id: ni!(38),
+        position: Point { x: 74, y: 1170 },
+    },
+    Port {
+        net_id: ni!(137),
+        position: Point { x: 740, y: 2800 },
+    },
+    Port {
+        net_id: ni!(139),
+        position: Point { x: 740, y: 2820 },
+    },
+    Port {
+        net_id: ni!(61),
+        position: Point { x: 794, y: 2810 },
+    },
+    Port {
+        net_id: ni!(129),
+        position: Point { x: 620, y: 2020 },
+    },
+    Port {
+        net_id: ni!(92),
+        position: Point { x: 620, y: 2040 },
+    },
+    Port {
+        net_id: ni!(137),
+        position: Point { x: 674, y: 2030 },
+    },
+    Port {
+        net_id: ni!(102),
+        position: Point { x: 500, y: 1620 },
+    },
+    Port {
+        net_id: ni!(70),
+        position: Point { x: 500, y: 1640 },
+    },
+    Port {
+        net_id: ni!(129),
+        position: Point { x: 554, y: 1630 },
+    },
+    Port {
+        net_id: ni!(94),
+        position: Point { x: 380, y: 1420 },
+    },
+    Port {
+        net_id: ni!(111),
+        position: Point { x: 380, y: 1440 },
+    },
+    Port {
+        net_id: ni!(102),
+        position: Point { x: 434, y: 1430 },
+    },
+    Port {
+        net_id: ni!(62),
+        position: Point { x: 260, y: 1300 },
+    },
+    Port {
+        net_id: ni!(83),
+        position: Point { x: 260, y: 1320 },
+    },
+    Port {
+        net_id: ni!(94),
+        position: Point { x: 314, y: 1310 },
+    },
+    Port {
+        net_id: ni!(3),
+        position: Point { x: 20, y: 1240 },
+    },
+    Port {
+        net_id: ni!(7),
+        position: Point { x: 20, y: 1260 },
+    },
+    Port {
+        net_id: ni!(62),
+        position: Point { x: 74, y: 1250 },
+    },
+    Port {
+        net_id: ni!(79),
+        position: Point { x: 140, y: 1360 },
+    },
+    Port {
+        net_id: ni!(93),
+        position: Point { x: 140, y: 1380 },
+    },
+    Port {
+        net_id: ni!(83),
+        position: Point { x: 194, y: 1370 },
+    },
+    Port {
+        net_id: ni!(0),
+        position: Point { x: 20, y: 1320 },
+    },
+    Port {
+        net_id: ni!(16),
+        position: Point { x: 20, y: 1340 },
+    },
+    Port {
+        net_id: ni!(79),
+        position: Point { x: 74, y: 1330 },
+    },
+    Port {
+        net_id: ni!(26),
+        position: Point { x: 20, y: 1400 },
+    },
+    Port {
+        net_id: ni!(40),
+        position: Point { x: 20, y: 1420 },
+    },
+    Port {
+        net_id: ni!(93),
+        position: Point { x: 74, y: 1410 },
+    },
+    Port {
+        net_id: ni!(1),
+        position: Point { x: 260, y: 1520 },
+    },
+    Port {
+        net_id: ni!(11),
+        position: Point { x: 260, y: 1540 },
+    },
+    Port {
+        net_id: ni!(111),
+        position: Point { x: 314, y: 1530 },
+    },
+    Port {
+        net_id: ni!(6),
+        position: Point { x: 140, y: 1560 },
+    },
+    Port {
+        net_id: ni!(19),
+        position: Point { x: 140, y: 1580 },
+    },
+    Port {
+        net_id: ni!(11),
+        position: Point { x: 194, y: 1570 },
+    },
+    Port {
+        net_id: ni!(12),
+        position: Point { x: 20, y: 1520 },
+    },
+    Port {
+        net_id: ni!(5),
+        position: Point { x: 20, y: 1540 },
+    },
+    Port {
+        net_id: ni!(6),
+        position: Point { x: 74, y: 1530 },
+    },
+    Port {
+        net_id: ni!(16),
+        position: Point { x: 20, y: 1600 },
+    },
+    Port {
+        net_id: ni!(26),
+        position: Point { x: 20, y: 1620 },
+    },
+    Port {
+        net_id: ni!(19),
+        position: Point { x: 74, y: 1610 },
+    },
+    Port {
+        net_id: ni!(65),
+        position: Point { x: 380, y: 1820 },
+    },
+    Port {
+        net_id: ni!(98),
+        position: Point { x: 380, y: 1840 },
+    },
+    Port {
+        net_id: ni!(70),
+        position: Point { x: 434, y: 1830 },
+    },
+    Port {
+        net_id: ni!(3),
+        position: Point { x: 260, y: 1720 },
+    },
+    Port {
+        net_id: ni!(56),
+        position: Point { x: 260, y: 1740 },
+    },
+    Port {
+        net_id: ni!(65),
+        position: Point { x: 314, y: 1730 },
+    },
+    Port {
+        net_id: ni!(53),
+        position: Point { x: 140, y: 1760 },
+    },
+    Port {
+        net_id: ni!(64),
+        position: Point { x: 140, y: 1780 },
+    },
+    Port {
+        net_id: ni!(56),
+        position: Point { x: 194, y: 1770 },
+    },
+    Port {
+        net_id: ni!(2),
+        position: Point { x: 20, y: 1720 },
+    },
+    Port {
+        net_id: ni!(0),
+        position: Point { x: 20, y: 1740 },
+    },
+    Port {
+        net_id: ni!(53),
+        position: Point { x: 74, y: 1730 },
+    },
+    Port {
+        net_id: ni!(10),
+        position: Point { x: 20, y: 1800 },
+    },
+    Port {
+        net_id: ni!(68),
+        position: Point { x: 20, y: 1820 },
+    },
+    Port {
+        net_id: ni!(64),
+        position: Point { x: 74, y: 1810 },
+    },
+    Port {
+        net_id: ni!(1),
+        position: Point { x: 260, y: 1920 },
+    },
+    Port {
+        net_id: ni!(114),
+        position: Point { x: 260, y: 1940 },
+    },
+    Port {
+        net_id: ni!(98),
+        position: Point { x: 314, y: 1930 },
+    },
+    Port {
+        net_id: ni!(106),
+        position: Point { x: 140, y: 1960 },
+    },
+    Port {
+        net_id: ni!(128),
+        position: Point { x: 140, y: 1980 },
+    },
+    Port {
+        net_id: ni!(114),
+        position: Point { x: 194, y: 1970 },
+    },
+    Port {
+        net_id: ni!(2),
+        position: Point { x: 20, y: 1920 },
+    },
+    Port {
+        net_id: ni!(12),
+        position: Point { x: 20, y: 1940 },
+    },
+    Port {
+        net_id: ni!(106),
+        position: Point { x: 74, y: 1930 },
+    },
+    Port {
+        net_id: ni!(10),
+        position: Point { x: 20, y: 2000 },
+    },
+    Port {
+        net_id: ni!(68),
+        position: Point { x: 20, y: 2020 },
+    },
+    Port {
+        net_id: ni!(128),
+        position: Point { x: 74, y: 2010 },
+    },
+    Port {
+        net_id: ni!(87),
+        position: Point { x: 500, y: 2420 },
+    },
+    Port {
+        net_id: ni!(101),
+        position: Point { x: 500, y: 2440 },
+    },
+    Port {
+        net_id: ni!(92),
+        position: Point { x: 554, y: 2430 },
+    },
+    Port {
+        net_id: ni!(42),
+        position: Point { x: 380, y: 2220 },
+    },
+    Port {
+        net_id: ni!(67),
+        position: Point { x: 380, y: 2240 },
+    },
+    Port {
+        net_id: ni!(87),
+        position: Point { x: 434, y: 2230 },
+    },
+    Port {
+        net_id: ni!(3),
+        position: Point { x: 260, y: 2120 },
+    },
+    Port {
+        net_id: ni!(33),
+        position: Point { x: 260, y: 2140 },
+    },
+    Port {
+        net_id: ni!(42),
+        position: Point { x: 314, y: 2130 },
+    },
+    Port {
+        net_id: ni!(28),
+        position: Point { x: 140, y: 2160 },
+    },
+    Port {
+        net_id: ni!(41),
+        position: Point { x: 140, y: 2180 },
+    },
+    Port {
+        net_id: ni!(33),
+        position: Point { x: 194, y: 2170 },
+    },
+    Port {
+        net_id: ni!(12),
+        position: Point { x: 20, y: 2120 },
+    },
+    Port {
+        net_id: ni!(5),
+        position: Point { x: 20, y: 2140 },
+    },
+    Port {
+        net_id: ni!(28),
+        position: Point { x: 74, y: 2130 },
+    },
+    Port {
+        net_id: ni!(32),
+        position: Point { x: 20, y: 2200 },
+    },
+    Port {
+        net_id: ni!(40),
+        position: Point { x: 20, y: 2220 },
+    },
+    Port {
+        net_id: ni!(41),
+        position: Point { x: 74, y: 2210 },
+    },
+    Port {
+        net_id: ni!(1),
+        position: Point { x: 260, y: 2320 },
+    },
+    Port {
+        net_id: ni!(77),
+        position: Point { x: 260, y: 2340 },
+    },
+    Port {
+        net_id: ni!(67),
+        position: Point { x: 314, y: 2330 },
+    },
+    Port {
+        net_id: ni!(74),
+        position: Point { x: 140, y: 2360 },
+    },
+    Port {
+        net_id: ni!(86),
+        position: Point { x: 140, y: 2380 },
+    },
+    Port {
+        net_id: ni!(77),
+        position: Point { x: 194, y: 2370 },
+    },
+    Port {
+        net_id: ni!(0),
+        position: Point { x: 20, y: 2320 },
+    },
+    Port {
+        net_id: ni!(5),
+        position: Point { x: 20, y: 2340 },
+    },
+    Port {
+        net_id: ni!(74),
+        position: Point { x: 74, y: 2330 },
+    },
+    Port {
+        net_id: ni!(32),
+        position: Point { x: 20, y: 2400 },
+    },
+    Port {
+        net_id: ni!(40),
+        position: Point { x: 20, y: 2420 },
+    },
+    Port {
+        net_id: ni!(86),
+        position: Point { x: 74, y: 2410 },
+    },
+    Port {
+        net_id: ni!(133),
+        position: Point { x: 380, y: 2620 },
+    },
+    Port {
+        net_id: ni!(45),
+        position: Point { x: 380, y: 2640 },
+    },
+    Port {
+        net_id: ni!(101),
+        position: Point { x: 434, y: 2630 },
+    },
+    Port {
+        net_id: ni!(1),
+        position: Point { x: 260, y: 2520 },
+    },
+    Port {
+        net_id: ni!(4),
+        position: Point { x: 260, y: 2540 },
+    },
+    Port {
+        net_id: ni!(133),
+        position: Point { x: 314, y: 2530 },
+    },
+    Port {
+        net_id: ni!(132),
+        position: Point { x: 140, y: 2560 },
+    },
+    Port {
+        net_id: ni!(15),
+        position: Point { x: 140, y: 2580 },
+    },
+    Port {
+        net_id: ni!(4),
+        position: Point { x: 194, y: 2570 },
+    },
+    Port {
+        net_id: ni!(2),
+        position: Point { x: 20, y: 2520 },
+    },
+    Port {
+        net_id: ni!(0),
+        position: Point { x: 20, y: 2540 },
+    },
+    Port {
+        net_id: ni!(132),
+        position: Point { x: 74, y: 2530 },
+    },
+    Port {
+        net_id: ni!(10),
+        position: Point { x: 20, y: 2600 },
+    },
+    Port {
+        net_id: ni!(18),
+        position: Point { x: 20, y: 2620 },
+    },
+    Port {
+        net_id: ni!(15),
+        position: Point { x: 74, y: 2610 },
+    },
+    Port {
+        net_id: ni!(1),
+        position: Point { x: 260, y: 2720 },
+    },
+    Port {
+        net_id: ni!(52),
+        position: Point { x: 260, y: 2740 },
+    },
+    Port {
+        net_id: ni!(45),
+        position: Point { x: 314, y: 2730 },
+    },
+    Port {
+        net_id: ni!(48),
+        position: Point { x: 140, y: 2760 },
+    },
+    Port {
+        net_id: ni!(60),
+        position: Point { x: 140, y: 2780 },
+    },
+    Port {
+        net_id: ni!(52),
+        position: Point { x: 194, y: 2770 },
+    },
+    Port {
+        net_id: ni!(7),
+        position: Point { x: 20, y: 2720 },
+    },
+    Port {
+        net_id: ni!(12),
+        position: Point { x: 20, y: 2740 },
+    },
+    Port {
+        net_id: ni!(48),
+        position: Point { x: 74, y: 2730 },
+    },
+    Port {
+        net_id: ni!(16),
+        position: Point { x: 20, y: 2800 },
+    },
+    Port {
+        net_id: ni!(26),
+        position: Point { x: 20, y: 2820 },
+    },
+    Port {
+        net_id: ni!(60),
+        position: Point { x: 74, y: 2810 },
+    },
+    Port {
+        net_id: ni!(131),
+        position: Point { x: 620, y: 3560 },
+    },
+    Port {
+        net_id: ni!(75),
+        position: Point { x: 620, y: 3580 },
+    },
+    Port {
+        net_id: ni!(139),
+        position: Point { x: 674, y: 3570 },
+    },
+    Port {
+        net_id: ni!(127),
+        position: Point { x: 500, y: 3220 },
+    },
+    Port {
+        net_id: ni!(81),
+        position: Point { x: 500, y: 3240 },
+    },
+    Port {
+        net_id: ni!(131),
+        position: Point { x: 554, y: 3230 },
+    },
+    Port {
+        net_id: ni!(121),
+        position: Point { x: 380, y: 3020 },
+    },
+    Port {
+        net_id: ni!(136),
+        position: Point { x: 380, y: 3040 },
+    },
+    Port {
+        net_id: ni!(127),
+        position: Point { x: 434, y: 3030 },
+    },
+    Port {
+        net_id: ni!(3),
+        position: Point { x: 260, y: 2920 },
+    },
+    Port {
+        net_id: ni!(105),
+        position: Point { x: 260, y: 2940 },
+    },
+    Port {
+        net_id: ni!(121),
+        position: Point { x: 314, y: 2930 },
+    },
+    Port {
+        net_id: ni!(97),
+        position: Point { x: 140, y: 2960 },
+    },
+    Port {
+        net_id: ni!(120),
+        position: Point { x: 140, y: 2980 },
+    },
+    Port {
+        net_id: ni!(105),
+        position: Point { x: 194, y: 2970 },
+    },
+    Port {
+        net_id: ni!(7),
+        position: Point { x: 20, y: 2920 },
+    },
+    Port {
+        net_id: ni!(12),
+        position: Point { x: 20, y: 2940 },
+    },
+    Port {
+        net_id: ni!(97),
+        position: Point { x: 74, y: 2930 },
+    },
+    Port {
+        net_id: ni!(32),
+        position: Point { x: 20, y: 3000 },
+    },
+    Port {
+        net_id: ni!(40),
+        position: Point { x: 20, y: 3020 },
+    },
+    Port {
+        net_id: ni!(120),
+        position: Point { x: 74, y: 3010 },
+    },
+    Port {
+        net_id: ni!(1),
+        position: Point { x: 260, y: 3120 },
+    },
+    Port {
+        net_id: ni!(27),
+        position: Point { x: 260, y: 3140 },
+    },
+    Port {
+        net_id: ni!(136),
+        position: Point { x: 314, y: 3130 },
+    },
+    Port {
+        net_id: ni!(22),
+        position: Point { x: 140, y: 3160 },
+    },
+    Port {
+        net_id: ni!(36),
+        position: Point { x: 140, y: 3180 },
+    },
+    Port {
+        net_id: ni!(27),
+        position: Point { x: 194, y: 3170 },
+    },
+    Port {
+        net_id: ni!(7),
+        position: Point { x: 20, y: 3120 },
+    },
+    Port {
+        net_id: ni!(0),
+        position: Point { x: 20, y: 3140 },
+    },
+    Port {
+        net_id: ni!(22),
+        position: Point { x: 74, y: 3130 },
+    },
+    Port {
+        net_id: ni!(32),
+        position: Point { x: 20, y: 3200 },
+    },
+    Port {
+        net_id: ni!(40),
+        position: Point { x: 20, y: 3220 },
+    },
+    Port {
+        net_id: ni!(36),
+        position: Point { x: 74, y: 3210 },
+    },
+    Port {
+        net_id: ni!(76),
+        position: Point { x: 260, y: 3400 },
+    },
+    Port {
+        net_id: ni!(109),
+        position: Point { x: 260, y: 3420 },
+    },
+    Port {
+        net_id: ni!(81),
+        position: Point { x: 314, y: 3410 },
+    },
+    Port {
+        net_id: ni!(58),
+        position: Point { x: 140, y: 3320 },
+    },
+    Port {
+        net_id: ni!(73),
+        position: Point { x: 140, y: 3340 },
+    },
+    Port {
+        net_id: ni!(76),
+        position: Point { x: 194, y: 3330 },
+    },
+    Port {
+        net_id: ni!(3),
+        position: Point { x: 20, y: 3280 },
+    },
+    Port {
+        net_id: ni!(12),
+        position: Point { x: 20, y: 3300 },
+    },
+    Port {
+        net_id: ni!(58),
+        position: Point { x: 74, y: 3290 },
+    },
+    Port {
+        net_id: ni!(5),
+        position: Point { x: 20, y: 3360 },
+    },
+    Port {
+        net_id: ni!(68),
+        position: Point { x: 20, y: 3380 },
+    },
+    Port {
+        net_id: ni!(73),
+        position: Point { x: 74, y: 3370 },
+    },
+    Port {
+        net_id: ni!(100),
+        position: Point { x: 140, y: 3480 },
+    },
+    Port {
+        net_id: ni!(124),
+        position: Point { x: 140, y: 3500 },
+    },
+    Port {
+        net_id: ni!(109),
+        position: Point { x: 194, y: 3490 },
+    },
+    Port {
+        net_id: ni!(1),
+        position: Point { x: 20, y: 3440 },
+    },
+    Port {
+        net_id: ni!(0),
+        position: Point { x: 20, y: 3460 },
+    },
+    Port {
+        net_id: ni!(100),
+        position: Point { x: 74, y: 3450 },
+    },
+    Port {
+        net_id: ni!(5),
+        position: Point { x: 20, y: 3520 },
+    },
+    Port {
+        net_id: ni!(68),
+        position: Point { x: 20, y: 3540 },
+    },
+    Port {
+        net_id: ni!(124),
+        position: Point { x: 74, y: 3530 },
+    },
+    Port {
+        net_id: ni!(69),
+        position: Point { x: 380, y: 3880 },
+    },
+    Port {
+        net_id: ni!(125),
+        position: Point { x: 380, y: 3900 },
+    },
+    Port {
+        net_id: ni!(75),
+        position: Point { x: 434, y: 3890 },
+    },
+    Port {
+        net_id: ni!(34),
+        position: Point { x: 260, y: 3720 },
+    },
+    Port {
+        net_id: ni!(55),
+        position: Point { x: 260, y: 3740 },
+    },
+    Port {
+        net_id: ni!(69),
+        position: Point { x: 314, y: 3730 },
+    },
+    Port {
+        net_id: ni!(13),
+        position: Point { x: 140, y: 3640 },
+    },
+    Port {
+        net_id: ni!(30),
+        position: Point { x: 140, y: 3660 },
+    },
+    Port {
+        net_id: ni!(34),
+        position: Point { x: 194, y: 3650 },
+    },
+    Port {
+        net_id: ni!(1),
+        position: Point { x: 20, y: 3600 },
+    },
+    Port {
+        net_id: ni!(12),
+        position: Point { x: 20, y: 3620 },
+    },
+    Port {
+        net_id: ni!(13),
+        position: Point { x: 74, y: 3610 },
+    },
+    Port {
+        net_id: ni!(5),
+        position: Point { x: 20, y: 3680 },
+    },
+    Port {
+        net_id: ni!(18),
+        position: Point { x: 20, y: 3700 },
+    },
+    Port {
+        net_id: ni!(30),
+        position: Point { x: 74, y: 3690 },
+    },
+    Port {
+        net_id: ni!(50),
+        position: Point { x: 140, y: 3800 },
+    },
+    Port {
+        net_id: ni!(63),
+        position: Point { x: 140, y: 3820 },
+    },
+    Port {
+        net_id: ni!(55),
+        position: Point { x: 194, y: 3810 },
+    },
+    Port {
+        net_id: ni!(3),
+        position: Point { x: 20, y: 3760 },
+    },
+    Port {
+        net_id: ni!(7),
+        position: Point { x: 20, y: 3780 },
+    },
+    Port {
+        net_id: ni!(50),
+        position: Point { x: 74, y: 3770 },
+    },
+    Port {
+        net_id: ni!(12),
+        position: Point { x: 20, y: 3840 },
+    },
+    Port {
+        net_id: ni!(68),
+        position: Point { x: 20, y: 3860 },
+    },
+    Port {
+        net_id: ni!(63),
+        position: Point { x: 74, y: 3850 },
+    },
+    Port {
+        net_id: ni!(117),
+        position: Point { x: 260, y: 4040 },
+    },
+    Port {
+        net_id: ni!(134),
+        position: Point { x: 260, y: 4060 },
+    },
+    Port {
+        net_id: ni!(125),
+        position: Point { x: 314, y: 4050 },
+    },
+    Port {
+        net_id: ni!(89),
+        position: Point { x: 140, y: 3960 },
+    },
+    Port {
+        net_id: ni!(112),
+        position: Point { x: 140, y: 3980 },
+    },
+    Port {
+        net_id: ni!(117),
+        position: Point { x: 194, y: 3970 },
+    },
+    Port {
+        net_id: ni!(1),
+        position: Point { x: 20, y: 3920 },
+    },
+    Port {
+        net_id: ni!(7),
+        position: Point { x: 20, y: 3940 },
+    },
+    Port {
+        net_id: ni!(89),
+        position: Point { x: 74, y: 3930 },
+    },
+    Port {
+        net_id: ni!(0),
+        position: Point { x: 20, y: 4000 },
+    },
+    Port {
+        net_id: ni!(68),
+        position: Point { x: 20, y: 4020 },
+    },
+    Port {
+        net_id: ni!(112),
+        position: Point { x: 74, y: 4010 },
+    },
+    Port {
+        net_id: ni!(8),
+        position: Point { x: 140, y: 4120 },
+    },
+    Port {
+        net_id: ni!(21),
+        position: Point { x: 140, y: 4140 },
+    },
+    Port {
+        net_id: ni!(134),
+        position: Point { x: 194, y: 4130 },
+    },
+    Port {
+        net_id: ni!(1),
+        position: Point { x: 20, y: 4080 },
+    },
+    Port {
+        net_id: ni!(7),
+        position: Point { x: 20, y: 4100 },
+    },
+    Port {
+        net_id: ni!(8),
+        position: Point { x: 74, y: 4090 },
+    },
+    Port {
+        net_id: ni!(12),
+        position: Point { x: 20, y: 4160 },
+    },
+    Port {
+        net_id: ni!(18),
+        position: Point { x: 20, y: 4180 },
+    },
+    Port {
+        net_id: ni!(21),
+        position: Point { x: 74, y: 4170 },
+    },
+    Port {
+        net_id: ni!(9),
+        position: Point { x: 960, y: 4640 },
+    },
+    Port {
+        net_id: ni!(71),
+        position: Point { x: 500, y: 4620 },
+    },
+    Port {
+        net_id: ni!(59),
+        position: Point { x: 500, y: 4640 },
+    },
+    Port {
+        net_id: ni!(9),
+        position: Point { x: 554, y: 4630 },
+    },
+    Port {
+        net_id: ni!(66),
+        position: Point { x: 380, y: 4380 },
+    },
+    Port {
+        net_id: ni!(99),
+        position: Point { x: 380, y: 4400 },
+    },
+    Port {
+        net_id: ni!(71),
+        position: Point { x: 434, y: 4390 },
+    },
+    Port {
+        net_id: ni!(46),
+        position: Point { x: 140, y: 4280 },
+    },
+    Port {
+        net_id: ni!(57),
+        position: Point { x: 140, y: 4300 },
+    },
+    Port {
+        net_id: ni!(66),
+        position: Point { x: 194, y: 4290 },
+    },
+    Port {
+        net_id: ni!(1),
+        position: Point { x: 20, y: 4240 },
+    },
+    Port {
+        net_id: ni!(2),
+        position: Point { x: 20, y: 4260 },
+    },
+    Port {
+        net_id: ni!(46),
+        position: Point { x: 74, y: 4250 },
+    },
+    Port {
+        net_id: ni!(0),
+        position: Point { x: 20, y: 4320 },
+    },
+    Port {
+        net_id: ni!(10),
+        position: Point { x: 20, y: 4340 },
+    },
+    Port {
+        net_id: ni!(57),
+        position: Point { x: 74, y: 4330 },
+    },
+    Port {
+        net_id: ni!(90),
+        position: Point { x: 260, y: 4480 },
+    },
+    Port {
+        net_id: ni!(122),
+        position: Point { x: 260, y: 4500 },
+    },
+    Port {
+        net_id: ni!(99),
+        position: Point { x: 314, y: 4490 },
+    },
+    Port {
+        net_id: ni!(1),
+        position: Point { x: 140, y: 4420 },
+    },
+    Port {
+        net_id: ni!(84),
+        position: Point { x: 140, y: 4440 },
+    },
+    Port {
+        net_id: ni!(90),
+        position: Point { x: 194, y: 4430 },
+    },
+    Port {
+        net_id: ni!(12),
+        position: Point { x: 20, y: 4440 },
+    },
+    Port {
+        net_id: ni!(5),
+        position: Point { x: 20, y: 4460 },
+    },
+    Port {
+        net_id: ni!(84),
+        position: Point { x: 74, y: 4450 },
+    },
+    Port {
+        net_id: ni!(1),
+        position: Point { x: 140, y: 4540 },
+    },
+    Port {
+        net_id: ni!(130),
+        position: Point { x: 140, y: 4560 },
+    },
+    Port {
+        net_id: ni!(122),
+        position: Point { x: 194, y: 4550 },
+    },
+    Port {
+        net_id: ni!(7),
+        position: Point { x: 20, y: 4560 },
+    },
+    Port {
+        net_id: ni!(12),
+        position: Point { x: 20, y: 4580 },
+    },
+    Port {
+        net_id: ni!(130),
+        position: Point { x: 74, y: 4570 },
+    },
+    Port {
+        net_id: ni!(54),
+        position: Point { x: 380, y: 4840 },
+    },
+    Port {
+        net_id: ni!(88),
+        position: Point { x: 380, y: 4860 },
+    },
+    Port {
+        net_id: ni!(59),
+        position: Point { x: 434, y: 4850 },
+    },
+    Port {
+        net_id: ni!(23),
+        position: Point { x: 260, y: 4700 },
+    },
+    Port {
+        net_id: ni!(43),
+        position: Point { x: 260, y: 4720 },
+    },
+    Port {
+        net_id: ni!(54),
+        position: Point { x: 314, y: 4710 },
+    },
+    Port {
+        net_id: ni!(1),
+        position: Point { x: 20, y: 4640 },
+    },
+    Port {
+        net_id: ni!(16),
+        position: Point { x: 20, y: 4660 },
+    },
+    Port {
+        net_id: ni!(23),
+        position: Point { x: 74, y: 4650 },
+    },
+    Port {
+        net_id: ni!(37),
+        position: Point { x: 140, y: 4760 },
+    },
+    Port {
+        net_id: ni!(49),
+        position: Point { x: 140, y: 4780 },
+    },
+    Port {
+        net_id: ni!(43),
+        position: Point { x: 194, y: 4770 },
+    },
+    Port {
+        net_id: ni!(2),
+        position: Point { x: 20, y: 4720 },
+    },
+    Port {
+        net_id: ni!(0),
+        position: Point { x: 20, y: 4740 },
+    },
+    Port {
+        net_id: ni!(37),
+        position: Point { x: 74, y: 4730 },
+    },
+    Port {
+        net_id: ni!(10),
+        position: Point { x: 20, y: 4800 },
+    },
+    Port {
+        net_id: ni!(16),
+        position: Point { x: 20, y: 4820 },
+    },
+    Port {
+        net_id: ni!(49),
+        position: Point { x: 74, y: 4810 },
+    },
+    Port {
+        net_id: ni!(82),
+        position: Point { x: 260, y: 4960 },
+    },
+    Port {
+        net_id: ni!(110),
+        position: Point { x: 260, y: 4980 },
+    },
+    Port {
+        net_id: ni!(88),
+        position: Point { x: 314, y: 4970 },
+    },
+    Port {
+        net_id: ni!(7),
+        position: Point { x: 140, y: 4900 },
+    },
+    Port {
+        net_id: ni!(78),
+        position: Point { x: 140, y: 4920 },
+    },
+    Port {
+        net_id: ni!(82),
+        position: Point { x: 194, y: 4910 },
+    },
+    Port {
+        net_id: ni!(12),
+        position: Point { x: 20, y: 4920 },
+    },
+    Port {
+        net_id: ni!(16),
+        position: Point { x: 20, y: 4940 },
+    },
+    Port {
+        net_id: ni!(78),
+        position: Point { x: 74, y: 4930 },
+    },
+    Port {
+        net_id: ni!(12),
+        position: Point { x: 140, y: 5020 },
+    },
+    Port {
+        net_id: ni!(116),
+        position: Point { x: 140, y: 5040 },
+    },
+    Port {
+        net_id: ni!(110),
+        position: Point { x: 194, y: 5030 },
+    },
+    Port {
+        net_id: ni!(5),
+        position: Point { x: 20, y: 5040 },
+    },
+    Port {
+        net_id: ni!(16),
+        position: Point { x: 20, y: 5060 },
+    },
+    Port {
+        net_id: ni!(116),
+        position: Point { x: 74, y: 5050 },
+    },
+    Port {
+        net_id: ni!(26),
+        position: Point { x: -560, y: -340 },
+    },
+    Port {
+        net_id: ni!(1),
+        position: Point { x: -560, y: -100 },
+    },
+    Port {
+        net_id: ni!(1),
+        position: Point { x: -500, y: -100 },
+    },
+    Port {
+        net_id: ni!(3),
+        position: Point { x: -446, y: -100 },
+    },
+    Port {
+        net_id: ni!(2),
+        position: Point { x: -560, y: -160 },
+    },
+    Port {
+        net_id: ni!(16),
+        position: Point { x: -560, y: -220 },
+    },
+    Port {
+        net_id: ni!(40),
+        position: Point { x: -560, y: -280 },
+    },
+    Port {
+        net_id: ni!(5),
+        position: Point { x: -560, y: -400 },
+    },
+    Port {
+        net_id: ni!(12),
+        position: Point { x: -560, y: -460 },
+    },
+    Port {
+        net_id: ni!(2),
+        position: Point { x: -500, y: -160 },
+    },
+    Port {
+        net_id: ni!(7),
+        position: Point { x: -446, y: -160 },
+    },
+    Port {
+        net_id: ni!(16),
+        position: Point { x: -500, y: -220 },
+    },
+    Port {
+        net_id: ni!(32),
+        position: Point { x: -446, y: -220 },
+    },
+    Port {
+        net_id: ni!(40),
+        position: Point { x: -500, y: -280 },
+    },
+    Port {
+        net_id: ni!(18),
+        position: Point { x: -446, y: -280 },
+    },
+    Port {
+        net_id: ni!(26),
+        position: Point { x: -500, y: -340 },
+    },
+    Port {
+        net_id: ni!(68),
+        position: Point { x: -446, y: -340 },
+    },
+    Port {
+        net_id: ni!(5),
+        position: Point { x: -500, y: -400 },
+    },
+    Port {
+        net_id: ni!(10),
+        position: Point { x: -446, y: -400 },
+    },
+    Port {
+        net_id: ni!(12),
+        position: Point { x: -500, y: -460 },
+    },
+    Port {
+        net_id: ni!(0),
+        position: Point { x: -446, y: -460 },
     },
 ];

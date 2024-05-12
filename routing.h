@@ -45,6 +45,7 @@ enum RT_Result {
     RT_RESULT_INVALID_OPERATION_ERROR = 2,
     RT_RESULT_BUFFER_OVERFLOW_ERROR = 3,
     RT_RESULT_UNINITIALIZED_ERROR = 4,
+    RT_RESULT_INVALID_ARGUMENT_ERROR = 5,
 };
 typedef uint32_t RT_Result;
 
@@ -125,31 +126,30 @@ typedef struct RT_Node {
     struct RT_NeighborList neighbors;
 } RT_Node;
 
-typedef struct RT_PathDef {
+typedef struct RT_Net {
     /**
-     * The start point of the path.
+     * The points connected by this net.
      */
-    struct RT_Point start;
+    const struct RT_Point *points;
     /**
-     * The end point of the path.
+     * The lengths of the paths in the net.
+     * Must contain exactly `point_count - 1` elements.
      */
-    struct RT_Point end;
-} RT_PathDef;
-
-typedef struct RT_PathRange {
+    uint16_t *path_lengths;
     /**
-     * The vertex offset this range starts at.
+     * The number of elements in `points`.
+     * Must be at least 2.
      */
-    uint32_t vertex_offset;
+    uint16_t point_count;
     /**
-     * The length of this range.
-     */
-    uint16_t vertex_count;
-    /**
-     * The index of the vertex buffer this range is in.
+     * The index of the vertex buffer all paths are in.
      */
     uint16_t vertex_buffer_index;
-} RT_PathRange;
+    /**
+     * The vertex offset the paths start at.
+     */
+    uint32_t vertex_offset;
+} RT_Net;
 
 typedef struct RT_Vertex {
     /**
@@ -260,29 +260,28 @@ RT_Result RT_graph_get_nodes(const struct RT_Graph *graph,
 RT_MUST_USE RT_Result RT_graph_free(struct RT_Graph *graph);
 
 /**
- * Finds shortest paths through a graph.
+ * Connects nets in a graph.
  *
  * **Parameters**
- * `graph`: The graph to find the paths through.
- * `paths`: A list of paths to find.
- * `path_ranges`: A list to write the range of vertices that belongs to each path into.
- * `path_count`: The number of elements in `paths` and `path_ranges`.
+ * `graph`: The graph to connect the nets in.
+ * `nets`: A list of nets to connect.
+ * `net_count`: The number of elements in `nets`.
  * `vertex_buffers`: A list of buffers to write the found paths into. There must be exactly as many buffers as threads in the pool.
  * `vertex_buffer_capacity`: The maximum number of vertices each buffer in `vertex_buffers` can hold.
  *
  * **Returns**
  * `RT_RESULT_SUCCESS`: The operation completed successfully.
- * `RT_RESULT_NULL_POINTER_ERROR`: `graph`, `paths`, `path_ranges`, `vertex_buffers` or `VertexBuffer::vertices` was `NULL`.
+ * `RT_RESULT_NULL_POINTER_ERROR`: `graph`, `nets`, `Net::points`, `Net::path_lengths`, `vertex_buffers` or `VertexBuffer::vertices` was `NULL`.
  * `RT_RESULT_INVALID_OPERATION_ERROR`: One of the paths had an invalid start or end point.
  * `RT_RESULT_BUFFER_OVERFLOW_ERROR`: The capacity of the vertex buffers was too small to hold all vertices.
  * `RT_RESULT_UNINITIALIZED_ERROR`: The thread pool was not initialized yet.
+ * `RT_RESULT_INVALID_ARGUMENT_ERROR`: `Net::point_count` was less than 2.
  */
 RT_MUST_USE
-RT_Result RT_graph_find_paths(const struct RT_Graph *graph,
-                              const struct RT_PathDef *paths,
-                              struct RT_PathRange *path_ranges,
-                              uint32_t path_count,
-                              struct RT_VertexBuffer *vertex_buffers,
-                              uint32_t vertex_buffer_capacity);
+RT_Result RT_graph_connect_nets(const struct RT_Graph *graph,
+                                struct RT_Net *nets,
+                                size_t net_count,
+                                struct RT_VertexBuffer *vertex_buffers,
+                                uint32_t vertex_buffer_capacity);
 
 #endif /* ROUTING_H */
