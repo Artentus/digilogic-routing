@@ -113,7 +113,7 @@ fn straight_impl(minimal: bool) {
             end: Point { x: 4, y: 2 },
         }],
         2,
-        &[&[Vertex { x: 0.0, y: 2.0 }, Vertex { x: 4.0, y: 2.0 }]],
+        &[&[Vertex { x: 4.0, y: 2.0 }, Vertex { x: 0.0, y: 2.0 }]],
     );
 }
 
@@ -129,9 +129,9 @@ fn one_bend_impl(minimal: bool) {
         }],
         3,
         &[&[
-            Vertex { x: 0.0, y: 0.0 },
-            Vertex { x: 0.0, y: 4.0 },
             Vertex { x: 4.0, y: 4.0 },
+            Vertex { x: 4.0, y: 0.0 },
+            Vertex { x: 0.0, y: 0.0 },
         ]],
     );
 }
@@ -156,10 +156,10 @@ fn two_bends_impl(minimal: bool) {
         }],
         12,
         &[&[
-            Vertex { x: 0.0, y: 0.0 },
-            Vertex { x: 0.0, y: 4.0 },
-            Vertex { x: 4.0, y: 4.0 },
             Vertex { x: 4.0, y: 0.0 },
+            Vertex { x: 4.0, y: 4.0 },
+            Vertex { x: 0.0, y: 4.0 },
+            Vertex { x: 0.0, y: 0.0 },
         ]],
     );
 }

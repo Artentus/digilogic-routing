@@ -363,7 +363,7 @@ pub unsafe extern "C" fn RT_graph_find_paths(
 
                 path.clear();
 
-                match path_finder.find_path_impl(graph, path, path_def.start, path_def.end) {
+                match path_finder.find_path_impl(graph, path, path_def.start, &[path_def.end]) {
                     PathFindResult::Found(_) => extend_vertex_buffer(
                         vertex_buffer,
                         vertex_buffer_capacity,

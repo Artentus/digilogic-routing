@@ -11,6 +11,7 @@ use std::cell::RefCell;
 use std::cmp::Reverse;
 use std::ops::{Index, IndexMut};
 
+type HashSet<T> = ahash::AHashSet<T>;
 type HashMap<K, V> = ahash::AHashMap<K, V>;
 type PriorityQueue<I, P> = priority_queue::PriorityQueue<I, P, ahash::RandomState>;
 type NodeIndex = u32;
@@ -1414,6 +1415,7 @@ impl<T> PathFindResult<T> {
 
 #[derive(Default)]
 pub struct PathFinder {
+    end_indices: HashSet<NodeIndex>,
     g_score: HashMap<NodeIndex, u32>,
     predecessor: HashMap<NodeIndex, NodeIndex>,
     open_queue: PriorityQueue<NodeIndex, Reverse<u32>>,
@@ -1444,13 +1446,13 @@ impl PathFinder {
     #[cfg(not(debug_assertions))]
     fn assert_data_is_valid(&self, _graph: &Graph) {}
 
-    fn build_path(&self, graph: &Graph, path: &mut Vec<Point>, start_index: NodeIndex) {
+    fn build_path(&self, graph: &Graph, path: &mut Vec<Point>, end_index: NodeIndex) {
         assert_eq!(path.len(), 0);
 
-        path.push(graph.nodes[start_index].position);
+        path.push(graph.nodes[end_index].position);
 
         let mut dir: Option<Direction> = None;
-        let mut current_index = start_index;
+        let mut current_index = end_index;
         loop {
             // The final node in the path has no predecessor.
             let Some(&pred_index) = self.predecessor.get(&current_index) else {
@@ -1481,35 +1483,45 @@ impl PathFinder {
         graph: &Graph,
         path: &mut Vec<Point>,
         start: Point,
-        end: Point,
+        ends: &[Point],
     ) -> PathFindResult<()> {
-        let Some(start_index) = graph.find_node_impl(start) else {
-            return PathFindResult::InvalidStartPoint;
-        };
-        let Some(end_index) = graph.find_node_impl(end) else {
-            return PathFindResult::InvalidEndPoint;
-        };
-
-        let start_node = &graph.nodes[start_index];
-        let end_node = &graph.nodes[end_index];
-        if (start_node.neighbor_count() == 0) || (end_node.neighbor_count() == 0) {
-            // There cannot possibly be a path, abort.
-            return PathFindResult::NotFound;
-        }
-
+        self.end_indices.clear();
         self.g_score.clear();
         self.predecessor.clear();
         self.open_queue.clear();
 
-        // Start at the end node since the final path is getting built in reverse (A* quirk).
-        self.g_score.insert(end_index, 0);
-        self.open_queue.push(end_index, Reverse(0));
+        let Some(start_index) = graph.find_node_impl(start) else {
+            return PathFindResult::InvalidStartPoint;
+        };
+
+        let mut total_neighbor_count = 0;
+        for &end in ends {
+            let Some(end_index) = graph.find_node_impl(end) else {
+                return PathFindResult::InvalidEndPoint;
+            };
+
+            let end_node = &graph.nodes[end_index];
+            let neighbor_count = end_node.neighbor_count();
+            total_neighbor_count += neighbor_count;
+
+            if neighbor_count > 0 {
+                self.end_indices.insert(end_index);
+            }
+        }
+
+        if total_neighbor_count == 0 {
+            // There cannot possibly be a path, abort.
+            return PathFindResult::NotFound;
+        }
+
+        self.g_score.insert(start_index, 0);
+        self.open_queue.push(start_index, Reverse(0));
 
         while let Some((current_index, _)) = self.open_queue.pop() {
             // Shortest path found, construct it and return.
-            if current_index == start_index {
+            if self.end_indices.contains(&current_index) {
                 self.assert_data_is_valid(graph);
-                self.build_path(graph, path, start_index);
+                self.build_path(graph, path, current_index);
                 return PathFindResult::Found(());
             }
 
@@ -1569,8 +1581,13 @@ impl PathFinder {
                     self.predecessor.insert(neighbor_index, current_index);
 
                     // Calculate the new approximate total cost.
-                    let new_f_score =
-                        new_g_score + neighbor_node.position.manhatten_distance_to(start);
+                    let new_f_score = new_g_score
+                        + ends
+                            .iter()
+                            .map(|&end| neighbor_node.position.manhatten_distance_to(end))
+                            .min()
+                            .expect("empty end point list");
+
                     self.open_queue.push(neighbor_index, Reverse(new_f_score));
                 }
             }
@@ -1588,7 +1605,20 @@ impl PathFinder {
         end: Point,
     ) -> PathFindResult<Vec<Point>> {
         let mut path = Vec::new();
-        self.find_path_impl(graph, &mut path, start, end)
+        self.find_path_impl(graph, &mut path, start, &[end])
+            .map(|_| path)
+    }
+
+    /// Finds the shortest path from `start` to one of `ends` through `graph`.
+    #[inline]
+    pub fn find_path_multi(
+        &mut self,
+        graph: &Graph,
+        start: Point,
+        ends: &[Point],
+    ) -> PathFindResult<Vec<Point>> {
+        let mut path = Vec::new();
+        self.find_path_impl(graph, &mut path, start, ends)
             .map(|_| path)
     }
 }
