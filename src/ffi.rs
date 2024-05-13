@@ -3,22 +3,9 @@
 
 use crate::*;
 use std::mem::MaybeUninit;
+use std::ops::Range;
 use std::sync::atomic::{AtomicU16, Ordering};
 use thread_local::ThreadLocal;
-
-#[repr(transparent)]
-struct SyncPtr<T: ?Sized>(*mut T);
-
-impl<T: ?Sized> Clone for SyncPtr<T> {
-    #[inline]
-    fn clone(&self) -> Self {
-        Self(self.0)
-    }
-}
-
-impl<T: ?Sized> Copy for SyncPtr<T> {}
-unsafe impl<T: ?Sized> Send for SyncPtr<T> {}
-unsafe impl<T: ?Sized> Sync for SyncPtr<T> {}
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 #[repr(u32)]
@@ -26,9 +13,10 @@ pub enum Result {
     Success = 0,
     NullPointerError = 1,
     InvalidOperationError = 2,
-    BufferOverflowError = 3,
-    UninitializedError = 4,
-    InvalidArgumentError = 5,
+    VertexBufferOverflowError = 3,
+    WireViewBufferOverflowError = 4,
+    UninitializedError = 5,
+    InvalidArgumentError = 6,
 }
 
 static NUM_CPUS: AtomicU16 = AtomicU16::new(0);
@@ -194,26 +182,40 @@ pub unsafe extern "C" fn RT_graph_free(graph: *mut Graph) -> Result {
     Result::Success
 }
 
+pub type EndpointIndex = u32;
+pub type WaypointIndex = u32;
+
+pub const INVALID_ENDPOINT_INDEX: EndpointIndex = u32::MAX;
+pub const INVALID_WAYPOINT_INDEX: WaypointIndex = u32::MAX;
+
+#[derive(Debug, Clone, Copy)]
+#[repr(C)]
+pub struct Endpoint {
+    /// The position of the endpoint.
+    pub position: Point,
+    /// The next endpoint in the net, or `RT_INVALID_ENDPOINT_INDEX` if none.
+    pub next: EndpointIndex,
+}
+
+#[derive(Debug, Clone, Copy)]
+#[repr(C)]
+pub struct Waypoint {
+    /// The position of the waypoint.
+    pub position: Point,
+    /// The next waypoint in the net, or `RT_INVALID_WAYPOINT_INDEX` if none.
+    pub next: WaypointIndex,
+}
+
 #[derive(Debug, Clone, Copy)]
 #[repr(C)]
 pub struct Net {
-    /// The points connected by this net.
-    pub points: *const Point,
-    /// The lengths of the paths in the net.  
-    /// Must contain exactly `point_count - 1` elements.
-    pub path_lengths: *mut u16,
-    /// The number of elements in `points`.  
-    /// Must be at least 2.
-    pub point_count: u16,
-    /// The index of the vertex buffer all paths are in.
-    pub vertex_buffer_index: u16,
-    /// The vertex offset the paths start at.
-    pub vertex_offset: u32,
+    /// The first endpoint of the net.
+    pub first_endpoint: EndpointIndex,
+    /// The first waypoint of the net, or `RT_INVALID_WAYPOINT_INDEX` if none.
+    pub first_waypoint: WaypointIndex,
 }
 
-unsafe impl Send for Net {}
-
-#[derive(Debug, Clone, Copy, PartialEq)]
+#[derive(Debug, Default, Clone, Copy, PartialEq)]
 #[repr(C)]
 pub struct Vertex {
     /// The X coordinate of the vertex.
@@ -222,72 +224,330 @@ pub struct Vertex {
     pub y: f32,
 }
 
-#[derive(Clone, Copy)]
+#[derive(Debug, Default, Clone, Copy)]
 #[repr(C)]
-pub struct VertexBuffer {
-    /// A list of vertices.
-    pub vertices: *mut Vertex,
-    /// The number of elements in `vertices`.
-    pub vertex_count: u32,
+pub struct WireView {
+    /// The number of vertices in this wire.
+    pub vertex_count: u16,
 }
 
-#[inline]
-unsafe fn slice_from_raw_parts_mut_uninit<'a, T>(
-    ptr: *mut T,
-    len: usize,
-) -> &'a mut [MaybeUninit<T>] {
-    unsafe { std::slice::from_raw_parts_mut(ptr as *mut MaybeUninit<T>, len) }
+#[derive(Debug, Default, Clone, Copy)]
+#[repr(C)]
+pub struct NetView {
+    /// The offset into `wire_views` this nets wires start at.
+    pub wire_offset: u32,
+    /// The number of wires in this net.
+    pub wire_count: u32,
+    /// The offset into `vertices` this nets  vertices start at.
+    pub vertex_offset: u32,
 }
 
-fn pick_root_path(points: &[Point]) -> (Point, Point) {
-    if points.len() == 2 {
-        return (points[0], points[1]);
+#[derive(Debug, Clone, Copy)]
+#[repr(C)]
+pub struct Slice<T> {
+    pub ptr: *const T,
+    pub len: usize,
+}
+
+unsafe impl<T> Send for Slice<T> {}
+unsafe impl<T> Sync for Slice<T> {}
+
+#[allow(dead_code)]
+impl<T> Slice<T> {
+    #[inline]
+    fn is_null(&self) -> bool {
+        self.ptr.is_null()
     }
 
+    #[inline]
+    unsafe fn subslice(&self, range: Range<usize>) -> Slice<T> {
+        assert!(range.start <= range.end);
+        assert!(range.end <= self.len);
+
+        let len = range.end - range.start;
+        let ptr = if len == 0 {
+            std::ptr::null()
+        } else {
+            unsafe { self.ptr.add(range.start) }
+        };
+
+        Slice { ptr, len }
+    }
+
+    #[inline]
+    unsafe fn as_ref<'a>(&self) -> &'a [T] {
+        if self.len == 0 {
+            &[]
+        } else {
+            unsafe { std::slice::from_raw_parts(self.ptr, self.len) }
+        }
+    }
+}
+
+#[derive(Debug, Clone, Copy)]
+#[repr(C)]
+pub struct MutSlice<T> {
+    pub ptr: *mut T,
+    pub len: usize,
+}
+
+unsafe impl<T> Send for MutSlice<T> {}
+unsafe impl<T> Sync for MutSlice<T> {}
+
+#[allow(dead_code)]
+impl<T> MutSlice<T> {
+    #[inline]
+    fn is_null(self) -> bool {
+        self.ptr.is_null()
+    }
+
+    #[inline]
+    unsafe fn subslice(&self, range: Range<usize>) -> Slice<T> {
+        assert!(range.start <= range.end);
+        assert!(range.end <= self.len);
+
+        let len = range.end - range.start;
+        let ptr = if len == 0 {
+            std::ptr::null()
+        } else {
+            unsafe { self.ptr.add(range.start) }
+        };
+
+        Slice { ptr, len }
+    }
+
+    #[inline]
+    unsafe fn subslice_mut(&mut self, range: Range<usize>) -> MutSlice<T> {
+        assert!(range.start <= range.end);
+        assert!(range.end <= self.len);
+
+        let len = range.end - range.start;
+        let ptr = if len == 0 {
+            std::ptr::null_mut()
+        } else {
+            unsafe { self.ptr.add(range.start) }
+        };
+
+        MutSlice { ptr, len }
+    }
+
+    #[inline]
+    unsafe fn as_ref<'a>(&self) -> &'a [T] {
+        if self.len == 0 {
+            &[]
+        } else {
+            unsafe { std::slice::from_raw_parts(self.ptr, self.len) }
+        }
+    }
+
+    #[inline]
+    unsafe fn as_uninit_mut<'a>(&mut self) -> &'a mut [MaybeUninit<T>] {
+        if self.len == 0 {
+            &mut []
+        } else {
+            unsafe { std::slice::from_raw_parts_mut(self.ptr as _, self.len) }
+        }
+    }
+}
+
+struct Array<T> {
+    ptr: *mut T,
+    cap: usize,
+    len: usize,
+}
+
+unsafe impl<T> Send for Array<T> {}
+unsafe impl<T> Sync for Array<T> {}
+
+impl<T> Array<T> {
+    #[inline]
+    fn from_mut_slice(slice: &mut MutSlice<T>, len: usize) -> Self {
+        Self {
+            ptr: slice.ptr,
+            cap: slice.len,
+            len,
+        }
+    }
+}
+
+fn pick_root_path(endpoints: &[Endpoint], first: EndpointIndex) -> (EndpointIndex, EndpointIndex) {
     let mut max_dist = 0;
-    let mut max_pair = (points[0], points[1]);
+    let mut max_pair = (INVALID_ENDPOINT_INDEX, INVALID_ENDPOINT_INDEX);
 
-    for (i, a) in points.iter().copied().enumerate() {
-        for b in points.iter().copied().skip(i + 1) {
-            let dist = a.manhatten_distance_to(b);
+    let mut a_index = first;
+    while a_index != INVALID_ENDPOINT_INDEX {
+        let a = endpoints[a_index as usize];
 
+        let mut b_index = a.next;
+        while b_index != INVALID_ENDPOINT_INDEX {
+            let b = endpoints[b_index as usize];
+
+            let dist = a.position.manhatten_distance_to(b.position);
             if dist > max_dist {
                 max_dist = dist;
-                max_pair = (a, b);
+                max_pair = (a_index, b_index);
             }
+
+            b_index = b.next;
         }
+
+        a_index = a.next;
     }
 
     max_pair
 }
 
-fn extend_vertex_buffer(
-    vertex_buffer: &mut VertexBuffer,
-    vertex_buffer_capacity: u32,
-    path: &[Point],
-) -> std::result::Result<u16, Result> {
-    let path_len: u16 = path.len().try_into().expect("path too long");
-    let Some(new_vertex_count) = vertex_buffer.vertex_count.checked_add(path_len as u32) else {
-        return Err(Result::BufferOverflowError);
+fn push_vertices(vertices: &mut Array<Vertex>, path: &[Point]) -> std::result::Result<(), Result> {
+    let Some(new_len) = vertices.len.checked_add(path.len()) else {
+        return Err(Result::VertexBufferOverflowError);
     };
-    if vertex_buffer_capacity < new_vertex_count {
-        return Err(Result::BufferOverflowError);
+    if vertices.cap < new_len {
+        return Err(Result::VertexBufferOverflowError);
     }
 
     for (i, point) in path.iter().copied().enumerate() {
         unsafe {
-            vertex_buffer
-                .vertices
-                .add((vertex_buffer.vertex_count as usize) + i)
-                .write(Vertex {
-                    x: point.x as f32,
-                    y: point.y as f32,
-                });
+            vertices.ptr.add(vertices.len + i).write(Vertex {
+                x: point.x as f32,
+                y: point.y as f32,
+            });
         }
     }
 
-    vertex_buffer.vertex_count = new_vertex_count;
-    Ok(path_len)
+    vertices.len = new_len;
+    Ok(())
+}
+
+fn push_wire_view(
+    wire_views: &mut Array<WireView>,
+    path_len: u16,
+) -> std::result::Result<(), Result> {
+    let Some(new_len) = wire_views.len.checked_add(1) else {
+        return Err(Result::WireViewBufferOverflowError);
+    };
+    if wire_views.cap < new_len {
+        return Err(Result::WireViewBufferOverflowError);
+    }
+
+    unsafe {
+        wire_views.ptr.write(WireView {
+            vertex_count: path_len,
+        });
+    }
+
+    wire_views.len = new_len;
+    Ok(())
+}
+
+fn route_root_wire(
+    graph: &Graph,
+    path_finder: &mut PathFinder,
+    net: &Net,
+    endpoints: &[Endpoint],
+    waypoints: &[Waypoint],
+    root_start: EndpointIndex,
+    root_end: EndpointIndex,
+    vertices: &mut Array<Vertex>,
+    wire_views: &mut Array<WireView>,
+    path: &mut Vec<Point>,
+    ends: &mut Vec<Point>,
+) -> std::result::Result<u32, Result> {
+    let mut wire_count = 0;
+
+    let mut prev_waypoint = endpoints[root_start as usize].position;
+    let mut waypoint_index = net.first_waypoint;
+    while waypoint_index != INVALID_WAYPOINT_INDEX {
+        let waypoint = waypoints[waypoint_index as usize];
+
+        path.clear();
+        match path_finder.find_path_impl(graph, path, prev_waypoint, &[waypoint.position]) {
+            PathFindResult::Found(_) => {
+                ends.extend_from_slice(&path);
+                push_vertices(vertices, &path)?;
+                push_wire_view(wire_views, path.len().try_into().expect("path too long"))?;
+            }
+            PathFindResult::NotFound => {
+                let path = [waypoint.position, prev_waypoint];
+                ends.extend_from_slice(&path);
+                push_vertices(vertices, &path)?;
+                push_wire_view(wire_views, 2)?;
+            }
+            PathFindResult::InvalidStartPoint | PathFindResult::InvalidEndPoint => {
+                return Err(Result::InvalidOperationError);
+            }
+        }
+
+        prev_waypoint = waypoint.position;
+        waypoint_index = waypoint.next;
+        wire_count += 1;
+    }
+
+    path.clear();
+    let waypoint = endpoints[root_end as usize].position;
+    match path_finder.find_path_impl(graph, path, prev_waypoint, &[waypoint]) {
+        PathFindResult::Found(_) => {
+            ends.extend_from_slice(&path);
+            push_vertices(vertices, &path)?;
+            push_wire_view(wire_views, path.len().try_into().expect("path too long"))?;
+        }
+        PathFindResult::NotFound => {
+            let path = [waypoint, prev_waypoint];
+            ends.extend_from_slice(&path);
+            push_vertices(vertices, &path)?;
+            push_wire_view(wire_views, 2)?;
+        }
+        PathFindResult::InvalidStartPoint | PathFindResult::InvalidEndPoint => {
+            return Err(Result::InvalidOperationError);
+        }
+    }
+
+    Ok(wire_count + 1)
+}
+
+fn route_branch_wires(
+    graph: &Graph,
+    path_finder: &mut PathFinder,
+    net: &Net,
+    endpoints: &[Endpoint],
+    root_start: EndpointIndex,
+    root_end: EndpointIndex,
+    vertices: &mut Array<Vertex>,
+    wire_views: &mut Array<WireView>,
+    path: &mut Vec<Point>,
+    ends: &mut Vec<Point>,
+) -> std::result::Result<u32, Result> {
+    let mut wire_count = 0;
+
+    let mut endpoint_index = net.first_endpoint;
+    while endpoint_index != INVALID_ENDPOINT_INDEX {
+        let endpoint = endpoints[endpoint_index as usize];
+
+        if (endpoint_index != root_start) && (endpoint_index != root_end) {
+            path.clear();
+            match path_finder.find_path_impl(graph, path, endpoint.position, ends) {
+                PathFindResult::Found(_) => {
+                    ends.extend_from_slice(&path);
+                    push_vertices(vertices, &path)?;
+                    push_wire_view(wire_views, path.len().try_into().expect("path too long"))?;
+                }
+                PathFindResult::NotFound => {
+                    let path = [endpoint.position, endpoints[root_start as usize].position];
+                    ends.extend_from_slice(&path);
+                    push_vertices(vertices, &path)?;
+                    push_wire_view(wire_views, 2)?;
+                }
+                PathFindResult::InvalidStartPoint | PathFindResult::InvalidEndPoint => {
+                    return Err(Result::InvalidOperationError);
+                }
+            }
+
+            wire_count += 1;
+        }
+
+        endpoint_index = endpoint.next;
+    }
+
+    Ok(wire_count)
 }
 
 /// Connects nets in a graph.
@@ -295,25 +555,30 @@ fn extend_vertex_buffer(
 /// **Parameters**  
 /// `graph`: The graph to connect the nets in.  
 /// `nets`: A list of nets to connect.  
-/// `net_count`: The number of elements in `nets`.  
-/// `vertex_buffers`: A list of buffers to write the found paths into. There must be exactly as many buffers as threads in the pool.  
-/// `vertex_buffer_capacity`: The maximum number of vertices each buffer in `vertex_buffers` can hold.
+/// `endpoints`: A list of net endpoints.  
+/// `waypoints`: A list of net waypoints.  
+/// `vertices`: A list to write the found vertices into.  
+/// `wire_views`: A list to write the found wires into.  
+/// `net_views`: A list to write the found nets into.
 ///
 /// **Returns**  
 /// `RT_RESULT_SUCCESS`: The operation completed successfully.  
-/// `RT_RESULT_NULL_POINTER_ERROR`: `graph`, `nets`, `Net::points`, `Net::path_lengths`, `vertex_buffers` or `VertexBuffer::vertices` was `NULL`.  
+/// `RT_RESULT_NULL_POINTER_ERROR`: `graph`, `nets.ptr`, `endpoints.ptr`, `waypoints.ptr`, `vertices.ptr`, `wire_views.ptr` or `net_views.ptr` was `NULL`.  
 /// `RT_RESULT_INVALID_OPERATION_ERROR`: One of the paths had an invalid start or end point.  
-/// `RT_RESULT_BUFFER_OVERFLOW_ERROR`: The capacity of the vertex buffers was too small to hold all vertices.  
-/// `RT_RESULT_UNINITIALIZED_ERROR`: The thread pool was not initialized yet.  
-/// `RT_RESULT_INVALID_ARGUMENT_ERROR`: `Net::point_count` was less than 2.
+/// `RT_RESULT_VERTEX_BUFFER_OVERFLOW_ERROR`: The capacity of `vertices` was too small to hold all vertices.  
+/// `RT_RESULT_WIRE_VIEW_BUFFER_OVERFLOW_ERROR`: The capacity of `wire_views` was too small to hold all wire views.  
+/// `RT_RESULT_UNINITIALIZED_ERROR`: The thread pool has not been initialized yet.  
+/// `RT_RESULT_INVALID_ARGUMENT_ERROR`: `nets.len` was not equal to `net_views.len` or a net contained fewer than 2 endpoints.
 #[no_mangle]
 #[must_use]
 pub unsafe extern "C" fn RT_graph_connect_nets(
     graph: *const Graph,
-    nets: *mut Net,
-    net_count: usize,
-    vertex_buffers: *mut VertexBuffer,
-    vertex_buffer_capacity: u32,
+    nets: Slice<Net>,
+    endpoints: Slice<Endpoint>,
+    waypoints: Slice<Waypoint>,
+    vertices: MutSlice<Vertex>,
+    wire_views: MutSlice<WireView>,
+    mut net_views: MutSlice<NetView>,
 ) -> Result {
     let num_cpus = NUM_CPUS.load(Ordering::Acquire);
     if num_cpus == 0 {
@@ -321,13 +586,26 @@ pub unsafe extern "C" fn RT_graph_connect_nets(
     }
     assert_eq!(num_cpus as usize, rayon::current_num_threads());
 
-    if graph.is_null() || nets.is_null() || vertex_buffers.is_null() {
+    if graph.is_null()
+        || nets.is_null()
+        || endpoints.is_null()
+        || waypoints.is_null()
+        || vertices.is_null()
+        || wire_views.is_null()
+        || net_views.is_null()
+    {
         return Result::NullPointerError;
     }
 
+    if nets.len != net_views.len {
+        return Result::InvalidArgumentError;
+    }
+
     let graph = unsafe { &*graph };
-    let nets = unsafe { std::slice::from_raw_parts_mut(nets, net_count) };
-    let vertex_buffers = SyncPtr(vertex_buffers);
+    let nets = unsafe { nets.as_ref() };
+    let endpoints = unsafe { endpoints.as_ref() };
+    let waypoints = unsafe { waypoints.as_ref() };
+    let net_views = unsafe { net_views.as_uninit_mut() };
 
     struct ThreadLocalData {
         path_finder: PathFinder,
@@ -343,110 +621,97 @@ pub unsafe extern "C" fn RT_graph_connect_nets(
         });
     }
 
-    let next_buffer_index: AtomicU16 = AtomicU16::new(0);
-    let buffer_index = ThreadLocal::new();
+    let vertices_per_thread = vertices.len / (num_cpus as usize);
+    let wire_views_per_thread = wire_views.len / (num_cpus as usize);
 
-    let result = nets.par_iter_mut().try_for_each(|net| {
-        THREAD_LOCAL_DATA.with_borrow_mut(
-            |ThreadLocalData {
-                 path_finder,
-                 path,
-                 ends,
-             }| {
-                if net.points.is_null() || net.path_lengths.is_null() {
-                    return Err(Result::NullPointerError);
-                }
+    let next_thread_index: AtomicU16 = AtomicU16::new(0);
+    let arrays = ThreadLocal::new();
 
-                if net.point_count < 2 {
-                    return Err(Result::InvalidArgumentError);
-                }
+    let result = nets
+        .par_iter()
+        .zip(net_views.par_iter_mut())
+        .try_for_each(|(net, net_view)| {
+            THREAD_LOCAL_DATA.with_borrow_mut(
+                |ThreadLocalData {
+                     path_finder,
+                     path,
+                     ends,
+                 }| {
+                    let (arrays, vertex_offset, wire_offset) = arrays.get_or(|| {
+                        let thread_index = next_thread_index.fetch_add(1, Ordering::AcqRel);
+                        assert!(thread_index < num_cpus);
+                        let thread_index = thread_index as usize;
 
-                let net_points =
-                    unsafe { std::slice::from_raw_parts(net.points, net.point_count as usize) };
-                let net_path_lengths = unsafe {
-                    slice_from_raw_parts_mut_uninit(
-                        net.path_lengths,
-                        (net.point_count - 1) as usize,
-                    )
-                };
+                        let mut vertices = vertices;
+                        let vertices_start = thread_index * vertices_per_thread;
+                        let vertices_end = vertices_start + vertices_per_thread;
+                        let mut vertices =
+                            unsafe { vertices.subslice_mut(vertices_start..vertices_end) };
+                        let vertices = Array::from_mut_slice(&mut vertices, 0);
 
-                let vertex_buffer_index = *buffer_index.get_or(|| {
-                    let buffer_index = next_buffer_index.fetch_add(1, Ordering::AcqRel);
-                    assert!(buffer_index < num_cpus);
-                    buffer_index
-                });
+                        let mut wire_views = wire_views;
+                        let wire_views_start = thread_index * wire_views_per_thread;
+                        let wire_views_end = wire_views_start + wire_views_per_thread;
+                        let mut wire_views =
+                            unsafe { wire_views.subslice_mut(wire_views_start..wire_views_end) };
+                        let wire_views = Array::from_mut_slice(&mut wire_views, 0);
 
-                let vertex_buffers = vertex_buffers;
-                let vertex_buffer =
-                    unsafe { &mut *vertex_buffers.0.add(vertex_buffer_index as usize) };
+                        (
+                            RefCell::new((vertices, wire_views)),
+                            vertices_start,
+                            wire_views_start,
+                        )
+                    });
+                    let (vertices, wire_views) = &mut *arrays.borrow_mut();
 
-                if vertex_buffer.vertices.is_null() {
-                    return Err(Result::NullPointerError);
-                }
+                    ends.clear();
+                    let vertex_offset = *vertex_offset + vertices.len;
+                    let wire_offset = *wire_offset + wire_views.len;
 
-                net.vertex_buffer_index = vertex_buffer_index;
-                net.vertex_offset = vertex_buffer.vertex_count;
-
-                ends.clear();
-
-                let (root_start, root_end) = pick_root_path(net_points);
-                let failsafe_path = [root_end, root_start];
-
-                path.clear();
-                let root_path_len =
-                    match path_finder.find_path_impl(graph, path, root_start, &[root_end]) {
-                        PathFindResult::Found(_) => {
-                            ends.extend_from_slice(&path);
-                            extend_vertex_buffer(vertex_buffer, vertex_buffer_capacity, &path)
-                        }
-                        PathFindResult::NotFound => {
-                            ends.extend_from_slice(&failsafe_path);
-                            extend_vertex_buffer(
-                                vertex_buffer,
-                                vertex_buffer_capacity,
-                                &failsafe_path,
-                            )
-                        }
-                        PathFindResult::InvalidStartPoint | PathFindResult::InvalidEndPoint => {
-                            Err(Result::InvalidOperationError)
-                        }
-                    }?;
-
-                net_path_lengths[0].write(root_path_len);
-
-                let mut path_index = 1;
-                for &point in net_points {
-                    if (point != root_start) && (point != root_end) {
-                        let failsafe_path = [point, root_start];
-
-                        path.clear();
-                        let path_len = match path_finder.find_path_impl(graph, path, point, &ends) {
-                            PathFindResult::Found(_) => {
-                                ends.extend_from_slice(&path);
-                                extend_vertex_buffer(vertex_buffer, vertex_buffer_capacity, &path)
-                            }
-                            PathFindResult::NotFound => {
-                                ends.extend_from_slice(&failsafe_path);
-                                extend_vertex_buffer(
-                                    vertex_buffer,
-                                    vertex_buffer_capacity,
-                                    &failsafe_path,
-                                )
-                            }
-                            PathFindResult::InvalidStartPoint | PathFindResult::InvalidEndPoint => {
-                                Err(Result::InvalidOperationError)
-                            }
-                        }?;
-
-                        net_path_lengths[path_index].write(path_len);
-                        path_index += 1;
+                    let (root_start, root_end) = pick_root_path(endpoints, net.first_endpoint);
+                    if (root_start == INVALID_ENDPOINT_INDEX)
+                        || (root_end == INVALID_ENDPOINT_INDEX)
+                    {
+                        return Err(Result::InvalidArgumentError);
                     }
-                }
 
-                Ok(())
-            },
-        )
-    });
+                    let root_wire_count = route_root_wire(
+                        graph,
+                        path_finder,
+                        net,
+                        endpoints,
+                        waypoints,
+                        root_start,
+                        root_end,
+                        vertices,
+                        wire_views,
+                        path,
+                        ends,
+                    )?;
+
+                    let branch_wire_count = route_branch_wires(
+                        graph,
+                        path_finder,
+                        net,
+                        endpoints,
+                        root_start,
+                        root_end,
+                        vertices,
+                        wire_views,
+                        path,
+                        ends,
+                    )?;
+
+                    net_view.write(NetView {
+                        wire_offset: wire_offset.try_into().expect("too many wires"),
+                        wire_count: root_wire_count + branch_wire_count,
+                        vertex_offset: vertex_offset.try_into().expect("too many vertices"),
+                    });
+
+                    Ok(())
+                },
+            )
+        });
 
     match result {
         Ok(_) => Result::Success,

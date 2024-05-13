@@ -164,7 +164,7 @@ impl Default for Directions {
     }
 }
 
-#[derive(Debug, Default, Clone, Copy, PartialEq, Eq, Hash)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 #[repr(C)]
 pub struct Point {
     /// The X coordinate of the point.
@@ -174,9 +174,21 @@ pub struct Point {
 }
 
 impl Point {
+    pub const ZERO: Self = {
+        // use a block to prevent cbindgen from exporting
+        Self { x: 0, y: 0 }
+    };
+
     #[inline]
     pub const fn manhatten_distance_to(self, other: Self) -> u32 {
         self.x.abs_diff(other.x) + self.y.abs_diff(other.y)
+    }
+}
+
+impl Default for Point {
+    #[inline]
+    fn default() -> Self {
+        Self::ZERO
     }
 }
 

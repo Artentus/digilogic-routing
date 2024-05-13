@@ -16,7 +16,7 @@ const ANCHORS: &[Anchor] = &[
     Anchor::new(0, 4),
 ];
 
-fn init() -> u16 {
+fn init() -> usize {
     use std::sync::Once;
 
     static INIT: Once = Once::new();
@@ -29,68 +29,72 @@ fn init() -> u16 {
     let result = unsafe { RT_get_thread_count((&mut thread_count) as *mut _) };
     assert_eq!(result, Result::Success);
     assert_ne!(thread_count, 0);
-    thread_count
+    thread_count as usize
 }
 
-fn test_impl(
-    graph: &Graph,
-    net_points: [Point; 2],
-    vertex_buffer_capacity: u32,
-    expected: &[Vertex],
-) {
-    let vertex_buffer_count = init();
-
-    let mut path_lengths = [0u16];
-    let mut net = Net {
-        points: net_points.as_ptr(),
-        path_lengths: path_lengths.as_mut_ptr(),
-        point_count: net_points.len() as u16,
-        vertex_buffer_index: 0,
-        vertex_offset: 0,
-    };
-
-    let mut vertex_buffers = Vec::new();
-    for _ in 0..vertex_buffer_count {
-        let mut vertices = Vec::new();
-        vertices.reserve_exact(vertex_buffer_capacity as usize);
-        let ptr = vertices.as_mut_ptr();
-        std::mem::forget(vertices);
-
-        vertex_buffers.push(VertexBuffer {
-            vertices: ptr,
-            vertex_count: 0,
-        });
+impl<'a, T> From<&'a [T]> for Slice<T> {
+    fn from(value: &'a [T]) -> Self {
+        Slice {
+            ptr: value.as_ptr(),
+            len: value.len(),
+        }
     }
+}
+
+impl<'a, T> From<&'a mut [T]> for MutSlice<T> {
+    fn from(value: &'a mut [T]) -> Self {
+        MutSlice {
+            ptr: value.as_mut_ptr(),
+            len: value.len(),
+        }
+    }
+}
+
+fn test_impl(graph: &Graph, net_points: [Point; 2], expected: &[Vertex]) {
+    let thread_count = init();
+
+    let nets = [Net {
+        first_endpoint: 0,
+        first_waypoint: INVALID_WAYPOINT_INDEX,
+    }];
+
+    let endpoints = [
+        Endpoint {
+            position: net_points[0],
+            next: 1,
+        },
+        Endpoint {
+            position: net_points[1],
+            next: INVALID_ENDPOINT_INDEX,
+        },
+    ];
+
+    let mut vertices = vec![Vertex::default(); expected.len() * thread_count];
+    let mut wire_views = vec![WireView::default(); thread_count];
+    let mut net_views = vec![NetView::default(); 1];
 
     let result = unsafe {
         RT_graph_connect_nets(
             graph as *const _,
-            (&mut net) as *mut _,
-            1,
-            vertex_buffers.as_mut_ptr(),
-            vertex_buffer_capacity,
+            nets.as_slice().into(),
+            endpoints.as_slice().into(),
+            [].as_slice().into(),
+            vertices.as_mut_slice().into(),
+            wire_views.as_mut_slice().into(),
+            net_views.as_mut_slice().into(),
         )
     };
 
     assert_eq!(result, Result::Success);
 
-    let vertex_buffers: Vec<_> = vertex_buffers
-        .into_iter()
-        .map(|vertex_buffer| unsafe {
-            Vec::from_raw_parts(
-                vertex_buffer.vertices,
-                vertex_buffer.vertex_count as usize,
-                vertex_buffer_capacity as usize,
-            )
-        })
-        .collect();
+    let net_view = &net_views[0];
+    assert_eq!(net_view.wire_count, 1);
 
-    assert_eq!(path_lengths[0] as usize, expected.len());
+    let wire_view = &wire_views[net_view.wire_offset as usize];
+    assert_eq!(wire_view.vertex_count as usize, expected.len());
 
-    let start = net.vertex_offset as usize;
-    let end = start + expected.len();
-    let actual = &vertex_buffers[net.vertex_buffer_index as usize][start..end];
-    assert_eq!(actual, expected);
+    let vertices = &vertices[(net_view.vertex_offset as usize)..(wire_view.vertex_count as usize)];
+    assert_eq!(vertices, expected);
 }
 
 fn straight_impl(minimal: bool) {
@@ -100,7 +104,6 @@ fn straight_impl(minimal: bool) {
     test_impl(
         &graph,
         [Point { x: 0, y: 2 }, Point { x: 4, y: 2 }],
-        2,
         &[Vertex { x: 4.0, y: 2.0 }, Vertex { x: 0.0, y: 2.0 }],
     );
 }
@@ -112,7 +115,6 @@ fn one_bend_impl(minimal: bool) {
     test_impl(
         &graph,
         [Point { x: 0, y: 0 }, Point { x: 4, y: 4 }],
-        3,
         &[
             Vertex { x: 4.0, y: 4.0 },
             Vertex { x: 4.0, y: 0.0 },
@@ -136,7 +138,6 @@ fn two_bends_impl(minimal: bool) {
     test_impl(
         &graph,
         [Point { x: 0, y: 0 }, Point { x: 4, y: 0 }],
-        12,
         &[
             Vertex { x: 4.0, y: 0.0 },
             Vertex { x: 4.0, y: 4.0 },
@@ -178,20 +179,13 @@ fn two_bends_minimal() {
 
 #[cfg(test)]
 mod visual {
-    use crate::ffi::*;
     use crate::*;
 
     include!("../test_data/graph.rs");
 
-    fn svg_out(
-        anchors: &[Anchor],
-        bounding_boxes: &[BoundingBox],
-        graph: &Graph,
-        routing_data: Option<(&[Net], &[Vec<Point>], &[Vec<u16>], &[Vec<Vertex>])>,
-        path: &str,
-    ) {
+    fn svg_out(anchors: &[Anchor], bounding_boxes: &[BoundingBox], graph: &Graph, path: &str) {
         use std::fmt::Write;
-        use svg::node::element::{path, Circle, Line, Path, Rectangle, Script};
+        use svg::node::element::{Circle, Line, Rectangle, Script};
 
         let anchors: ahash::AHashSet<_> = anchors.iter().map(|anchor| anchor.position).collect();
         let nodes = graph.nodes();
@@ -288,48 +282,6 @@ mod visual {
             );
         }
 
-        if let Some((nets, net_points, net_path_lengths, vertex_buffers)) = routing_data {
-            for ((net, points), path_lengths) in nets.iter().zip(net_points).zip(net_path_lengths) {
-                for point in points {
-                    document = document.add(
-                        Circle::new()
-                            .set("cx", point.x)
-                            .set("cy", point.y)
-                            .set("r", "3")
-                            .set("fill", "lime"),
-                    );
-
-                    let mut vertex_offset = net.vertex_offset as usize;
-                    for &path_len in path_lengths {
-                        let vertices = &vertex_buffers[net.vertex_buffer_index as usize]
-                            [vertex_offset..(vertex_offset + (path_len as usize))];
-                        vertex_offset += path_len as usize;
-
-                        document = document.add(
-                            Circle::new()
-                                .set("cx", vertices[0].x)
-                                .set("cy", vertices[0].y)
-                                .set("r", "2")
-                                .set("fill", "lime"),
-                        );
-
-                        let mut path_data = String::new();
-                        write!(path_data, "M {} {}", vertices[0].x, vertices[0].y).unwrap();
-                        for vertex in vertices.iter().skip(1) {
-                            write!(path_data, " L {} {}", vertex.x, vertex.y).unwrap();
-                        }
-
-                        document = document.add(
-                            Path::new()
-                                .set("d", path::Data::parse(&path_data).unwrap())
-                                .set("fill", "none")
-                                .set("stroke", "lime"),
-                        );
-                    }
-                }
-            }
-        }
-
         document = document.set(
             "viewBox",
             (
@@ -347,92 +299,13 @@ mod visual {
     fn fast() {
         let mut graph = Graph::default();
         graph.build(ANCHORS, BOUNDING_BOXES, false);
-        svg_out(ANCHORS, BOUNDING_BOXES, &graph, None, "graph_fast.svg");
+        svg_out(ANCHORS, BOUNDING_BOXES, &graph, "graph_fast.svg");
     }
 
     #[test]
     fn minimal() {
         let mut graph = Graph::default();
         graph.build(ANCHORS, BOUNDING_BOXES, true);
-        svg_out(ANCHORS, BOUNDING_BOXES, &graph, None, "graph_minimal.svg");
-    }
-
-    #[test]
-    fn route() {
-        let vertex_buffer_count = super::init();
-
-        let mut graph = Graph::default();
-        graph.build(ANCHORS, BOUNDING_BOXES, true);
-
-        let mut net_points = Vec::new();
-        let mut net_path_lengths = Vec::new();
-        for port in PORTS {
-            if net_points.len() <= port.net_id {
-                net_points.resize_with(port.net_id + 1, || Vec::new());
-                net_path_lengths.resize_with(port.net_id + 1, || Vec::new());
-            }
-
-            net_points[port.net_id].push(port.position);
-            if net_points[port.net_id].len() > 1 {
-                net_path_lengths[port.net_id].push(0u16);
-            }
-        }
-
-        let mut nets: Vec<_> = net_points
-            .iter()
-            .zip(net_path_lengths.iter_mut())
-            .map(|(points, path_lengths)| Net {
-                points: points.as_ptr(),
-                path_lengths: path_lengths.as_mut_ptr(),
-                point_count: points.len() as u16,
-                vertex_buffer_index: 0,
-                vertex_offset: 0,
-            })
-            .collect();
-
-        const VERTEX_BUFFER_CAPACITY: usize = 64 * 1024;
-        let mut vertex_buffers = Vec::new();
-        for _ in 0..vertex_buffer_count {
-            let mut vertices = Vec::new();
-            vertices.reserve_exact(VERTEX_BUFFER_CAPACITY);
-            let ptr = vertices.as_mut_ptr();
-            std::mem::forget(vertices);
-
-            vertex_buffers.push(VertexBuffer {
-                vertices: ptr,
-                vertex_count: 0,
-            });
-        }
-
-        let result = unsafe {
-            RT_graph_connect_nets(
-                (&graph) as *const _,
-                nets.as_mut_ptr(),
-                nets.len(),
-                vertex_buffers.as_mut_ptr(),
-                VERTEX_BUFFER_CAPACITY as u32,
-            )
-        };
-
-        assert_eq!(result, Result::Success);
-
-        let vertex_buffers: Vec<_> = vertex_buffers
-            .into_iter()
-            .map(|vertex_buffer| unsafe {
-                Vec::from_raw_parts(
-                    vertex_buffer.vertices,
-                    vertex_buffer.vertex_count as usize,
-                    VERTEX_BUFFER_CAPACITY,
-                )
-            })
-            .collect();
-
-        svg_out(
-            ANCHORS,
-            BOUNDING_BOXES,
-            &graph,
-            Some((&nets, &net_points, &net_path_lengths, &vertex_buffers)),
-            "routed.svg",
-        );
+        svg_out(ANCHORS, BOUNDING_BOXES, &graph, "graph_minimal.svg");
     }
 }

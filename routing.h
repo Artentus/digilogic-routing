@@ -43,9 +43,10 @@ enum RT_Result {
     RT_RESULT_SUCCESS = 0,
     RT_RESULT_NULL_POINTER_ERROR = 1,
     RT_RESULT_INVALID_OPERATION_ERROR = 2,
-    RT_RESULT_BUFFER_OVERFLOW_ERROR = 3,
-    RT_RESULT_UNINITIALIZED_ERROR = 4,
-    RT_RESULT_INVALID_ARGUMENT_ERROR = 5,
+    RT_RESULT_VERTEX_BUFFER_OVERFLOW_ERROR = 3,
+    RT_RESULT_WIRE_VIEW_BUFFER_OVERFLOW_ERROR = 4,
+    RT_RESULT_UNINITIALIZED_ERROR = 5,
+    RT_RESULT_INVALID_ARGUMENT_ERROR = 6,
 };
 typedef uint32_t RT_Result;
 
@@ -126,30 +127,57 @@ typedef struct RT_Node {
     struct RT_NeighborList neighbors;
 } RT_Node;
 
+typedef uint32_t RT_EndpointIndex;
+
+typedef uint32_t RT_WaypointIndex;
+
 typedef struct RT_Net {
     /**
-     * The points connected by this net.
+     * The first endpoint of the net.
      */
-    const struct RT_Point *points;
+    RT_EndpointIndex first_endpoint;
     /**
-     * The lengths of the paths in the net.
-     * Must contain exactly `point_count - 1` elements.
+     * The first waypoint of the net, or `RT_INVALID_WAYPOINT_INDEX` if none.
      */
-    uint16_t *path_lengths;
-    /**
-     * The number of elements in `points`.
-     * Must be at least 2.
-     */
-    uint16_t point_count;
-    /**
-     * The index of the vertex buffer all paths are in.
-     */
-    uint16_t vertex_buffer_index;
-    /**
-     * The vertex offset the paths start at.
-     */
-    uint32_t vertex_offset;
+    RT_WaypointIndex first_waypoint;
 } RT_Net;
+
+typedef struct RT_Slice_Net {
+    const struct RT_Net *ptr;
+    size_t len;
+} RT_Slice_Net;
+
+typedef struct RT_Endpoint {
+    /**
+     * The position of the endpoint.
+     */
+    struct RT_Point position;
+    /**
+     * The next endpoint in the net, or `RT_INVALID_ENDPOINT_INDEX` if none.
+     */
+    RT_EndpointIndex next;
+} RT_Endpoint;
+
+typedef struct RT_Slice_Endpoint {
+    const struct RT_Endpoint *ptr;
+    size_t len;
+} RT_Slice_Endpoint;
+
+typedef struct RT_Waypoint {
+    /**
+     * The position of the waypoint.
+     */
+    struct RT_Point position;
+    /**
+     * The next waypoint in the net, or `RT_INVALID_WAYPOINT_INDEX` if none.
+     */
+    RT_WaypointIndex next;
+} RT_Waypoint;
+
+typedef struct RT_Slice_Waypoint {
+    const struct RT_Waypoint *ptr;
+    size_t len;
+} RT_Slice_Waypoint;
 
 typedef struct RT_Vertex {
     /**
@@ -162,16 +190,46 @@ typedef struct RT_Vertex {
     float y;
 } RT_Vertex;
 
-typedef struct RT_VertexBuffer {
+typedef struct RT_MutSlice_Vertex {
+    struct RT_Vertex *ptr;
+    size_t len;
+} RT_MutSlice_Vertex;
+
+typedef struct RT_WireView {
     /**
-     * A list of vertices.
+     * The number of vertices in this wire.
      */
-    struct RT_Vertex *vertices;
+    uint16_t vertex_count;
+} RT_WireView;
+
+typedef struct RT_MutSlice_WireView {
+    struct RT_WireView *ptr;
+    size_t len;
+} RT_MutSlice_WireView;
+
+typedef struct RT_NetView {
     /**
-     * The number of elements in `vertices`.
+     * The offset into `wire_views` this nets wires start at.
      */
-    uint32_t vertex_count;
-} RT_VertexBuffer;
+    uint32_t wire_offset;
+    /**
+     * The number of wires in this net.
+     */
+    uint32_t wire_count;
+    /**
+     * The offset into `vertices` this nets  vertices start at.
+     */
+    uint32_t vertex_offset;
+} RT_NetView;
+
+typedef struct RT_MutSlice_NetView {
+    struct RT_NetView *ptr;
+    size_t len;
+} RT_MutSlice_NetView;
+
+#define RT_INVALID_ENDPOINT_INDEX UINT32_MAX
+
+#define RT_INVALID_WAYPOINT_INDEX UINT32_MAX
 
 /**
  * Initializes the thread pool.
@@ -265,23 +323,28 @@ RT_MUST_USE RT_Result RT_graph_free(struct RT_Graph *graph);
  * **Parameters**
  * `graph`: The graph to connect the nets in.
  * `nets`: A list of nets to connect.
- * `net_count`: The number of elements in `nets`.
- * `vertex_buffers`: A list of buffers to write the found paths into. There must be exactly as many buffers as threads in the pool.
- * `vertex_buffer_capacity`: The maximum number of vertices each buffer in `vertex_buffers` can hold.
+ * `endpoints`: A list of net endpoints.
+ * `waypoints`: A list of net waypoints.
+ * `vertices`: A list to write the found vertices into.
+ * `wire_views`: A list to write the found wires into.
+ * `net_views`: A list to write the found nets into.
  *
  * **Returns**
  * `RT_RESULT_SUCCESS`: The operation completed successfully.
- * `RT_RESULT_NULL_POINTER_ERROR`: `graph`, `nets`, `Net::points`, `Net::path_lengths`, `vertex_buffers` or `VertexBuffer::vertices` was `NULL`.
+ * `RT_RESULT_NULL_POINTER_ERROR`: `graph`, `nets.ptr`, `endpoints.ptr`, `waypoints.ptr`, `vertices.ptr`, `wire_views.ptr` or `net_views.ptr` was `NULL`.
  * `RT_RESULT_INVALID_OPERATION_ERROR`: One of the paths had an invalid start or end point.
- * `RT_RESULT_BUFFER_OVERFLOW_ERROR`: The capacity of the vertex buffers was too small to hold all vertices.
- * `RT_RESULT_UNINITIALIZED_ERROR`: The thread pool was not initialized yet.
- * `RT_RESULT_INVALID_ARGUMENT_ERROR`: `Net::point_count` was less than 2.
+ * `RT_RESULT_VERTEX_BUFFER_OVERFLOW_ERROR`: The capacity of `vertices` was too small to hold all vertices.
+ * `RT_RESULT_WIRE_VIEW_BUFFER_OVERFLOW_ERROR`: The capacity of `wire_views` was too small to hold all wire views.
+ * `RT_RESULT_UNINITIALIZED_ERROR`: The thread pool has not been initialized yet.
+ * `RT_RESULT_INVALID_ARGUMENT_ERROR`: `nets.len` was not equal to `net_views.len` or a net contained fewer than 2 endpoints.
  */
 RT_MUST_USE
 RT_Result RT_graph_connect_nets(const struct RT_Graph *graph,
-                                struct RT_Net *nets,
-                                size_t net_count,
-                                struct RT_VertexBuffer *vertex_buffers,
-                                uint32_t vertex_buffer_capacity);
+                                struct RT_Slice_Net nets,
+                                struct RT_Slice_Endpoint endpoints,
+                                struct RT_Slice_Waypoint waypoints,
+                                struct RT_MutSlice_Vertex vertices,
+                                struct RT_MutSlice_WireView wire_views,
+                                struct RT_MutSlice_NetView net_views);
 
 #endif /* ROUTING_H */
