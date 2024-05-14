@@ -1594,9 +1594,11 @@ impl PathFinder {
 
                     // Calculate the new approximate total cost.
                     let new_f_score = new_g_score
-                        + ends
+                        + self
+                            .end_indices
                             .iter()
-                            .map(|&end| neighbor_node.position.manhatten_distance_to(end))
+                            .map(|&end_index| &graph.nodes[end_index])
+                            .map(|end| neighbor_node.position.manhatten_distance_to(end.position))
                             .min()
                             .expect("empty end point list");
 
