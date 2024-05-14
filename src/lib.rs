@@ -1425,6 +1425,48 @@ impl<T> PathFindResult<T> {
     }
 }
 
+#[derive(Debug, Default, Clone)]
+pub struct Path {
+    points: Vec<Point>,
+    dirs: Vec<Option<Direction>>,
+}
+
+impl Path {
+    #[inline]
+    fn clear(&mut self) {
+        self.points.clear();
+        self.dirs.clear();
+    }
+
+    #[inline]
+    pub fn iter(&self) -> impl Iterator<Item = Point> + '_ {
+        self.points.iter().copied()
+    }
+
+    pub fn iter_pruned(&self) -> impl Iterator<Item = Point> + '_ {
+        assert_eq!(self.points.len(), self.dirs.len());
+
+        let mut prev_dir: Option<Direction> = None;
+        self.points
+            .iter()
+            .zip(&self.dirs)
+            .filter_map(move |(&point, &dir)| {
+                let include = match (dir, prev_dir) {
+                    (Some(dir), Some(prev_dir)) => dir != prev_dir,
+                    _ => true,
+                };
+
+                prev_dir = dir;
+
+                if include {
+                    Some(point)
+                } else {
+                    None
+                }
+            })
+    }
+}
+
 #[derive(Default)]
 pub struct PathFinder {
     end_indices: HashSet<NodeIndex>,
@@ -1458,12 +1500,11 @@ impl PathFinder {
     #[cfg(not(debug_assertions))]
     fn assert_data_is_valid(&self, _graph: &Graph) {}
 
-    fn build_path(&self, graph: &Graph, path: &mut Vec<Point>, end_index: NodeIndex) {
-        assert_eq!(path.len(), 0);
+    fn build_path(&self, graph: &Graph, path: &mut Path, end_index: NodeIndex) {
+        assert_eq!(path.points.len(), 0);
 
-        path.push(graph.nodes[end_index].position);
+        path.points.push(graph.nodes[end_index].position);
 
-        let mut dir: Option<Direction> = None;
         let mut current_index = end_index;
         loop {
             // The final node in the path has no predecessor.
@@ -1476,24 +1517,20 @@ impl PathFinder {
                 .find(pred_index)
                 .expect("invalid predecessor");
 
-            // If the predecessor is in the same direction as during the
-            // last step, replace it, otherwise add it.
-            if Some(pred_dir) == dir {
-                *path.last_mut().unwrap() = graph.nodes[pred_index].position;
-            } else {
-                path.push(graph.nodes[pred_index].position);
-                dir = Some(pred_dir);
-            }
+            path.dirs.push(Some(pred_dir));
+            path.points.push(graph.nodes[pred_index].position);
 
             current_index = pred_index;
         }
+
+        path.dirs.push(None);
     }
 
     /// A* path finding.
     fn find_path_impl(
         &mut self,
         graph: &Graph,
-        path: &mut Vec<Point>,
+        path: &mut Path,
         start: Point,
         ends: &[Point],
     ) -> PathFindResult<()> {
@@ -1612,13 +1649,8 @@ impl PathFinder {
 
     /// Finds the shortest path from `start` to `end` through `graph`.
     #[inline]
-    pub fn find_path(
-        &mut self,
-        graph: &Graph,
-        start: Point,
-        end: Point,
-    ) -> PathFindResult<Vec<Point>> {
-        let mut path = Vec::new();
+    pub fn find_path(&mut self, graph: &Graph, start: Point, end: Point) -> PathFindResult<Path> {
+        let mut path = Path::default();
         self.find_path_impl(graph, &mut path, start, &[end])
             .map(|_| path)
     }
@@ -1630,8 +1662,8 @@ impl PathFinder {
         graph: &Graph,
         start: Point,
         ends: &[Point],
-    ) -> PathFindResult<Vec<Point>> {
-        let mut path = Vec::new();
+    ) -> PathFindResult<Path> {
+        let mut path = Path::default();
         self.find_path_impl(graph, &mut path, start, ends)
             .map(|_| path)
     }

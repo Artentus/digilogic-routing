@@ -397,25 +397,32 @@ fn pick_root_path(endpoints: &[Endpoint], first: EndpointIndex) -> (EndpointInde
     max_pair
 }
 
-fn push_vertices(vertices: &mut Array<Vertex>, path: &[Point]) -> std::result::Result<(), Result> {
-    let Some(new_len) = vertices.len.checked_add(path.len()) else {
-        return Err(Result::VertexBufferOverflowError);
-    };
-    if vertices.cap < new_len {
-        return Err(Result::VertexBufferOverflowError);
-    }
+fn push_vertices(
+    vertices: &mut Array<Vertex>,
+    path: impl Iterator<Item = Point>,
+) -> std::result::Result<u16, Result> {
+    let mut path_len = 0usize;
 
-    for (i, point) in path.iter().copied().enumerate() {
+    for point in path {
+        let Some(new_len) = vertices.len.checked_add(1) else {
+            return Err(Result::VertexBufferOverflowError);
+        };
+        if vertices.cap < new_len {
+            return Err(Result::VertexBufferOverflowError);
+        }
+
         unsafe {
-            vertices.ptr.add(vertices.len + i).write(Vertex {
+            vertices.ptr.add(vertices.len).write(Vertex {
                 x: point.x as f32,
                 y: point.y as f32,
             });
         }
+
+        vertices.len = new_len;
+        path_len += 1;
     }
 
-    vertices.len = new_len;
-    Ok(())
+    Ok(path_len.try_into().expect("path too long"))
 }
 
 fn push_wire_view(
@@ -449,7 +456,7 @@ fn route_root_wire(
     root_end: EndpointIndex,
     vertices: &mut Array<Vertex>,
     wire_views: &mut Array<WireView>,
-    path: &mut Vec<Point>,
+    path: &mut Path,
     ends: &mut Vec<Point>,
 ) -> std::result::Result<u32, Result> {
     let mut wire_count = 0;
@@ -462,14 +469,14 @@ fn route_root_wire(
         path.clear();
         match path_finder.find_path_impl(graph, path, prev_waypoint, &[waypoint.position]) {
             PathFindResult::Found(_) => {
-                ends.extend_from_slice(&path);
-                push_vertices(vertices, &path)?;
-                push_wire_view(wire_views, path.len().try_into().expect("path too long"))?;
+                ends.extend(path.iter());
+                let path_len = push_vertices(vertices, path.iter_pruned())?;
+                push_wire_view(wire_views, path_len)?;
             }
             PathFindResult::NotFound => {
                 let path = [waypoint.position, prev_waypoint];
                 ends.extend_from_slice(&path);
-                push_vertices(vertices, &path)?;
+                push_vertices(vertices, path.iter().copied())?;
                 push_wire_view(wire_views, 2)?;
             }
             PathFindResult::InvalidStartPoint | PathFindResult::InvalidEndPoint => {
@@ -486,14 +493,14 @@ fn route_root_wire(
     let waypoint = endpoints[root_end as usize].position;
     match path_finder.find_path_impl(graph, path, prev_waypoint, &[waypoint]) {
         PathFindResult::Found(_) => {
-            ends.extend_from_slice(&path);
-            push_vertices(vertices, &path)?;
-            push_wire_view(wire_views, path.len().try_into().expect("path too long"))?;
+            ends.extend(path.iter());
+            let path_len = push_vertices(vertices, path.iter_pruned())?;
+            push_wire_view(wire_views, path_len)?;
         }
         PathFindResult::NotFound => {
             let path = [waypoint, prev_waypoint];
             ends.extend_from_slice(&path);
-            push_vertices(vertices, &path)?;
+            push_vertices(vertices, path.iter().copied())?;
             push_wire_view(wire_views, 2)?;
         }
         PathFindResult::InvalidStartPoint | PathFindResult::InvalidEndPoint => {
@@ -513,7 +520,7 @@ fn route_branch_wires(
     root_end: EndpointIndex,
     vertices: &mut Array<Vertex>,
     wire_views: &mut Array<WireView>,
-    path: &mut Vec<Point>,
+    path: &mut Path,
     ends: &mut Vec<Point>,
 ) -> std::result::Result<u32, Result> {
     let mut wire_count = 0;
@@ -526,14 +533,14 @@ fn route_branch_wires(
             path.clear();
             match path_finder.find_path_impl(graph, path, endpoint.position, ends) {
                 PathFindResult::Found(_) => {
-                    ends.extend_from_slice(&path);
-                    push_vertices(vertices, &path)?;
-                    push_wire_view(wire_views, path.len().try_into().expect("path too long"))?;
+                    ends.extend(path.iter());
+                    let path_len = push_vertices(vertices, path.iter_pruned())?;
+                    push_wire_view(wire_views, path_len)?;
                 }
                 PathFindResult::NotFound => {
                     let path = [endpoint.position, endpoints[root_start as usize].position];
                     ends.extend_from_slice(&path);
-                    push_vertices(vertices, &path)?;
+                    push_vertices(vertices, path.iter().copied())?;
                     push_wire_view(wire_views, 2)?;
                 }
                 PathFindResult::InvalidStartPoint | PathFindResult::InvalidEndPoint => {
@@ -609,14 +616,14 @@ pub unsafe extern "C" fn RT_graph_connect_nets(
 
     struct ThreadLocalData {
         path_finder: PathFinder,
-        path: Vec<Point>,
+        path: Path,
         ends: Vec<Point>,
     }
 
     thread_local! {
         static THREAD_LOCAL_DATA: RefCell<ThreadLocalData> = RefCell::new(ThreadLocalData {
             path_finder: PathFinder::default(),
-            path: Vec::new(),
+            path: Path::default(),
             ends: Vec::new(),
         });
     }
