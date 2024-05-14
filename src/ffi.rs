@@ -256,7 +256,7 @@ unsafe impl<T> Sync for Slice<T> {}
 impl<T> Slice<T> {
     #[inline]
     fn is_null(&self) -> bool {
-        self.ptr.is_null()
+        self.ptr.is_null() && (self.len != 0)
     }
 
     #[inline]
