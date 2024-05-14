@@ -430,7 +430,7 @@ fn push_wire_view(
     }
 
     unsafe {
-        wire_views.ptr.write(WireView {
+        wire_views.ptr.add(wire_views.len).write(WireView {
             vertex_count: path_len,
         });
     }
