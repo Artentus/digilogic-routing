@@ -50,16 +50,21 @@ impl Graph {
     pub fn find_path(&self, start: Point, end: Point) -> PathFindResult<Path> {
         let mut path_finder = self.path_finder.get_or_default().borrow_mut();
         path_finder
-            .find_path(&self.data, start, [end])
+            .find_path(&self.data, start, [end], false)
             .map(Path::clone)
     }
 
-    /// Finds the shortest path from `start` to one of `ends`.
+    /// Finds the shortest path from `start` to `ends`, optionally visiting all `ends`.
     #[inline]
-    pub fn find_path_multi(&self, start: Point, ends: &[Point]) -> PathFindResult<Path> {
+    pub fn find_path_multi(
+        &self,
+        start: Point,
+        ends: &[Point],
+        visit_all: bool,
+    ) -> PathFindResult<Path> {
         let mut path_finder = self.path_finder.get_or_default().borrow_mut();
         path_finder
-            .find_path(&self.data, start, ends.iter().copied())
+            .find_path(&self.data, start, ends.iter().copied(), visit_all)
             .map(Path::clone)
     }
 }

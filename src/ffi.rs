@@ -549,39 +549,19 @@ fn route_root_wire(
     wire_views: &mut Array<WireView>,
     ends: &mut Vec<Point>,
 ) -> std::result::Result<u32, Result> {
-    let mut wire_count = 0;
-
-    let mut prev_waypoint = root_start;
-    for waypoint in waypoints {
-        match path_finder.find_path(graph, prev_waypoint, [waypoint]) {
-            PathFindResult::Found(path) => {
-                ends.extend(path.iter());
-                let path_len = push_vertices(vertices, path.iter_pruned())?;
-                push_wire_view(wire_views, path_len)?;
-            }
-            PathFindResult::NotFound => {
-                let path = [waypoint, prev_waypoint];
-                ends.extend_from_slice(&path);
-                push_vertices(vertices, path)?;
-                push_wire_view(wire_views, 2)?;
-            }
-            PathFindResult::InvalidStartPoint | PathFindResult::InvalidEndPoint => {
-                return Err(Result::InvalidOperationError);
-            }
-        }
-
-        prev_waypoint = waypoint;
-        wire_count += 1;
-    }
-
-    match path_finder.find_path(graph, prev_waypoint, [root_end]) {
+    match path_finder.find_path(
+        graph,
+        root_start,
+        [root_end].into_iter().chain(waypoints),
+        true,
+    ) {
         PathFindResult::Found(path) => {
             ends.extend(path.iter());
             let path_len = push_vertices(vertices, path.iter_pruned())?;
             push_wire_view(wire_views, path_len)?;
         }
         PathFindResult::NotFound => {
-            let path = [root_end, prev_waypoint];
+            let path = [root_start, root_end];
             ends.extend_from_slice(&path);
             push_vertices(vertices, path)?;
             push_wire_view(wire_views, 2)?;
@@ -591,7 +571,7 @@ fn route_root_wire(
         }
     }
 
-    Ok(wire_count + 1)
+    Ok(1)
 }
 
 fn route_branch_wires(
@@ -608,7 +588,7 @@ fn route_branch_wires(
 
     for endpoint in endpoints {
         if (endpoint != root_start) && (endpoint != root_end) {
-            match path_finder.find_path(graph, endpoint, ends.iter().copied()) {
+            match path_finder.find_path(graph, endpoint, ends.iter().copied(), false) {
                 PathFindResult::Found(path) => {
                     ends.extend(path.iter());
                     let path_len = push_vertices(vertices, path.iter_pruned())?;

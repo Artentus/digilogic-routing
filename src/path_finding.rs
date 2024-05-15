@@ -101,28 +101,31 @@ impl PathFinder {
     fn assert_data_is_valid(&self, _graph: &GraphData) {}
 
     fn build_path(&mut self, graph: &GraphData, end_index: NodeIndex) {
-        self.path.clear();
+        // If there was a previous path segment, don't duplicate the joining point.
+        if self.path.points.len() > 0 {
+            self.path.points.pop();
+            self.path.dirs.pop();
+        }
+
+        let insert_index = self.path.points.len();
         self.path.points.push(graph.nodes[end_index].position);
+        self.path.dirs.push(None);
 
         let mut current_index = end_index;
-        loop {
-            // The final node in the path has no predecessor.
-            let Some(&pred_index) = self.predecessor.get(&current_index) else {
-                break;
-            };
+        // The final node in the path has no predecessor.
+        while let Some(&pred_index) = self.predecessor.get(&current_index) {
+            let pred = &graph.nodes[pred_index];
 
-            let pred_dir = graph.nodes[current_index]
+            let dir = pred
                 .neighbors
-                .find(pred_index)
+                .find(current_index)
                 .expect("invalid predecessor");
 
-            self.path.dirs.push(Some(pred_dir));
-            self.path.points.push(graph.nodes[pred_index].position);
+            self.path.points.insert(insert_index, pred.position);
+            self.path.dirs.insert(insert_index, Some(dir));
 
             current_index = pred_index;
         }
-
-        self.path.dirs.push(None);
     }
 
     /// A* path finding.
@@ -131,15 +134,14 @@ impl PathFinder {
         graph: &GraphData,
         start: Point,
         ends: impl IntoIterator<Item = Point>,
+        visit_all: bool,
     ) -> PathFindResult<&'a Path> {
-        self.end_indices.clear();
-        self.g_score.clear();
-        self.predecessor.clear();
-        self.open_queue.clear();
-
-        let Some(start_index) = graph.find_node(start) else {
+        let Some(mut start_index) = graph.find_node(start) else {
             return PathFindResult::InvalidStartPoint;
         };
+
+        self.end_indices.clear();
+        self.path.clear();
 
         let mut total_neighbor_count = 0;
         for end in ends {
@@ -156,92 +158,116 @@ impl PathFinder {
             }
         }
 
-        if total_neighbor_count == 0 {
-            // There cannot possibly be a path, abort.
-            return PathFindResult::NotFound;
-        }
-
-        self.g_score.insert(start_index, 0);
-        self.open_queue.push(start_index, Reverse(0));
-
-        while let Some((current_index, _)) = self.open_queue.pop() {
-            // Shortest path found, construct it and return.
-            if self.end_indices.contains(&current_index) {
-                self.assert_data_is_valid(graph);
-                self.build_path(graph, current_index);
-                return PathFindResult::Found(&self.path);
+        'outer: loop {
+            if total_neighbor_count == 0 {
+                // There cannot possibly be a path, abort.
+                break 'outer;
             }
 
-            let current_node = &graph.nodes[current_index];
-            let pred = self
-                .predecessor
-                .get(&current_index)
-                .map(|&pred_index| (pred_index, &graph.nodes[pred_index]));
+            self.g_score.clear();
+            self.predecessor.clear();
+            self.open_queue.clear();
 
-            // Find which direction is straight ahead to apply weights.
-            let straight_dir = if let Some((pred_index, pred_node)) = pred {
-                let pred_to_current_dir = pred_node
-                    .neighbors
-                    .find(current_index)
-                    .expect("invalid predecessor");
+            self.g_score.insert(start_index, 0);
+            self.open_queue.push(start_index, Reverse(0));
 
-                let current_to_pred_dir = current_node.neighbors.find(pred_index);
-                debug_assert_eq!(current_to_pred_dir, Some(pred_to_current_dir.opposite()));
+            while let Some((current_index, _)) = self.open_queue.pop() {
+                let current_node = &graph.nodes[current_index];
 
-                Some(pred_to_current_dir)
-            } else {
-                None
-            };
+                // Shortest path to one end found, construct it.
+                if self.end_indices.contains(&current_index) {
+                    self.assert_data_is_valid(graph);
+                    self.build_path(graph, current_index);
 
-            for dir in Direction::ALL {
-                if Some(dir.opposite()) == straight_dir {
-                    debug_assert_eq!(current_node.neighbors[dir], pred.unwrap().0);
+                    if visit_all {
+                        self.end_indices.remove(&current_index);
+                        total_neighbor_count -= current_node.neighbor_count();
+                        start_index = current_index;
 
-                    // The path came from here.
-                    continue;
+                        continue 'outer;
+                    } else {
+                        break 'outer;
+                    }
                 }
 
-                let neighbor_index = current_node.neighbors[dir];
-                if neighbor_index == INVALID_NODE_INDEX {
-                    continue;
-                }
+                let pred = self
+                    .predecessor
+                    .get(&current_index)
+                    .map(|&pred_index| (pred_index, &graph.nodes[pred_index]));
 
-                let neighbor_node = &graph.nodes[neighbor_index];
-                debug_assert_eq!(neighbor_node.neighbors[dir.opposite()], current_index);
+                // Find which direction is straight ahead to apply weights.
+                let straight_dir = if let Some((pred_index, pred_node)) = pred {
+                    let pred_to_current_dir = pred_node
+                        .neighbors
+                        .find(current_index)
+                        .expect("invalid predecessor");
 
-                // Calculate the new path lenght.
-                let new_g_score = self.g_score[&current_index]
-                    + current_node
-                        .position
-                        .manhatten_distance_to(neighbor_node.position)
-                        * if Some(dir) == straight_dir { 1 } else { 2 };
+                    let current_to_pred_dir = current_node.neighbors.find(pred_index);
+                    debug_assert_eq!(current_to_pred_dir, Some(pred_to_current_dir.opposite()));
 
-                // Check whether the new path length is shorter than the previous one.
-                let update = match self.g_score.get(&neighbor_index) {
-                    Some(&g_score) => new_g_score < g_score,
-                    None => true,
+                    Some(pred_to_current_dir)
+                } else {
+                    None
                 };
 
-                if update {
-                    // Shorter path found, update it.
-                    self.g_score.insert(neighbor_index, new_g_score);
-                    self.predecessor.insert(neighbor_index, current_index);
+                for dir in Direction::ALL {
+                    if Some(dir.opposite()) == straight_dir {
+                        debug_assert_eq!(current_node.neighbors[dir], pred.unwrap().0);
 
-                    // Calculate the new approximate total cost.
-                    let new_f_score = new_g_score
-                        + self
-                            .end_indices
-                            .iter()
-                            .map(|&end_index| &graph.nodes[end_index])
-                            .map(|end| neighbor_node.position.manhatten_distance_to(end.position))
-                            .min()
-                            .expect("empty end point list");
+                        // The path came from here.
+                        continue;
+                    }
 
-                    self.open_queue.push(neighbor_index, Reverse(new_f_score));
+                    let neighbor_index = current_node.neighbors[dir];
+                    if neighbor_index == INVALID_NODE_INDEX {
+                        continue;
+                    }
+
+                    let neighbor_node = &graph.nodes[neighbor_index];
+                    debug_assert_eq!(neighbor_node.neighbors[dir.opposite()], current_index);
+
+                    // Calculate the new path lenght.
+                    let new_g_score = self.g_score[&current_index]
+                        + current_node
+                            .position
+                            .manhatten_distance_to(neighbor_node.position)
+                            * if Some(dir) == straight_dir { 1 } else { 2 };
+
+                    // Check whether the new path length is shorter than the previous one.
+                    let update = match self.g_score.get(&neighbor_index) {
+                        Some(&g_score) => new_g_score < g_score,
+                        None => true,
+                    };
+
+                    if update {
+                        // Shorter path found, update it.
+                        self.g_score.insert(neighbor_index, new_g_score);
+                        self.predecessor.insert(neighbor_index, current_index);
+
+                        // Calculate the new approximate total cost.
+                        let new_f_score = new_g_score
+                            + self
+                                .end_indices
+                                .iter()
+                                .map(|&end_index| &graph.nodes[end_index])
+                                .map(|end| {
+                                    neighbor_node.position.manhatten_distance_to(end.position)
+                                })
+                                .min()
+                                .expect("empty end point list");
+
+                        self.open_queue.push(neighbor_index, Reverse(new_f_score));
+                    }
                 }
             }
+
+            break 'outer;
         }
 
-        PathFindResult::NotFound
+        if self.path.points.len() > 0 {
+            PathFindResult::Found(&self.path)
+        } else {
+            PathFindResult::NotFound
+        }
     }
 }
