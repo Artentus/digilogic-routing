@@ -2,6 +2,7 @@
 #![deny(unsafe_op_in_unsafe_fn)]
 
 use crate::*;
+use rayon::prelude::*;
 use std::mem::MaybeUninit;
 use std::ops::Range;
 use std::sync::atomic::{AtomicU16, Ordering};
@@ -154,8 +155,8 @@ pub unsafe extern "C" fn RT_graph_get_nodes(
 
     let graph = unsafe { &*graph };
     unsafe {
-        nodes.write(graph.nodes.0.as_ptr());
-        node_count.write(graph.nodes.0.len());
+        nodes.write(graph.nodes().as_ptr());
+        node_count.write(graph.nodes().len());
     }
 
     Result::Success
@@ -447,7 +448,7 @@ fn push_wire_view(
 }
 
 fn route_root_wire(
-    graph: &Graph,
+    graph: &GraphData,
     path_finder: &mut PathFinder,
     net: &Net,
     endpoints: &[Endpoint],
@@ -456,7 +457,6 @@ fn route_root_wire(
     root_end: EndpointIndex,
     vertices: &mut Array<Vertex>,
     wire_views: &mut Array<WireView>,
-    path: &mut Path,
     ends: &mut Vec<Point>,
 ) -> std::result::Result<u32, Result> {
     let mut wire_count = 0;
@@ -466,9 +466,8 @@ fn route_root_wire(
     while waypoint_index != INVALID_WAYPOINT_INDEX {
         let waypoint = waypoints[waypoint_index as usize];
 
-        path.clear();
-        match path_finder.find_path_impl(graph, path, prev_waypoint, &[waypoint.position]) {
-            PathFindResult::Found(_) => {
+        match path_finder.find_path(graph, prev_waypoint, &[waypoint.position]) {
+            PathFindResult::Found(path) => {
                 ends.extend(path.iter());
                 let path_len = push_vertices(vertices, path.iter_pruned())?;
                 push_wire_view(wire_views, path_len)?;
@@ -489,10 +488,9 @@ fn route_root_wire(
         wire_count += 1;
     }
 
-    path.clear();
     let waypoint = endpoints[root_end as usize].position;
-    match path_finder.find_path_impl(graph, path, prev_waypoint, &[waypoint]) {
-        PathFindResult::Found(_) => {
+    match path_finder.find_path(graph, prev_waypoint, &[waypoint]) {
+        PathFindResult::Found(path) => {
             ends.extend(path.iter());
             let path_len = push_vertices(vertices, path.iter_pruned())?;
             push_wire_view(wire_views, path_len)?;
@@ -512,7 +510,7 @@ fn route_root_wire(
 }
 
 fn route_branch_wires(
-    graph: &Graph,
+    graph: &GraphData,
     path_finder: &mut PathFinder,
     net: &Net,
     endpoints: &[Endpoint],
@@ -520,7 +518,6 @@ fn route_branch_wires(
     root_end: EndpointIndex,
     vertices: &mut Array<Vertex>,
     wire_views: &mut Array<WireView>,
-    path: &mut Path,
     ends: &mut Vec<Point>,
 ) -> std::result::Result<u32, Result> {
     let mut wire_count = 0;
@@ -530,9 +527,8 @@ fn route_branch_wires(
         let endpoint = endpoints[endpoint_index as usize];
 
         if (endpoint_index != root_start) && (endpoint_index != root_end) {
-            path.clear();
-            match path_finder.find_path_impl(graph, path, endpoint.position, ends) {
-                PathFindResult::Found(_) => {
+            match path_finder.find_path(graph, endpoint.position, ends) {
+                PathFindResult::Found(path) => {
                     ends.extend(path.iter());
                     let path_len = push_vertices(vertices, path.iter_pruned())?;
                     push_wire_view(wire_views, path_len)?;
@@ -614,110 +610,112 @@ pub unsafe extern "C" fn RT_graph_connect_nets(
     let waypoints = unsafe { waypoints.as_ref() };
     let net_views = unsafe { net_views.as_uninit_mut() };
 
-    struct ThreadLocalData {
-        path_finder: PathFinder,
-        path: Path,
-        ends: Vec<Point>,
-    }
-
-    thread_local! {
-        static THREAD_LOCAL_DATA: RefCell<ThreadLocalData> = RefCell::new(ThreadLocalData {
-            path_finder: PathFinder::default(),
-            path: Path::default(),
-            ends: Vec::new(),
-        });
-    }
-
     let vertices_per_thread = vertices.len / (num_cpus as usize);
     let wire_views_per_thread = wire_views.len / (num_cpus as usize);
 
+    struct MutableThreadlocalData {
+        vertices: Array<Vertex>,
+        wire_views: Array<WireView>,
+        ends: Vec<Point>,
+    }
+
+    struct ThreadlocalData {
+        mutable: RefCell<MutableThreadlocalData>,
+        vertex_offset: usize,
+        wire_offset: usize,
+    }
+
     let next_thread_index: AtomicU16 = AtomicU16::new(0);
-    let arrays = ThreadLocal::new();
+    let threadlocal_data = ThreadLocal::new();
 
     let result = nets
         .par_iter()
         .zip(net_views.par_iter_mut())
         .try_for_each(|(net, net_view)| {
-            THREAD_LOCAL_DATA.with_borrow_mut(
-                |ThreadLocalData {
-                     path_finder,
-                     path,
-                     ends,
-                 }| {
-                    let (arrays, vertex_offset, wire_offset) = arrays.get_or(|| {
-                        let thread_index = next_thread_index.fetch_add(1, Ordering::AcqRel);
-                        assert!(thread_index < num_cpus);
-                        let thread_index = thread_index as usize;
+            let path_finder = &mut *graph.path_finder.get_or_default().borrow_mut();
 
-                        let mut vertices = vertices;
-                        let vertices_start = thread_index * vertices_per_thread;
-                        let vertices_end = vertices_start + vertices_per_thread;
-                        let mut vertices =
-                            unsafe { vertices.subslice_mut(vertices_start..vertices_end) };
-                        let vertices = Array::from_mut_slice(&mut vertices, 0);
+            let threadlocal_data = threadlocal_data.get_or(|| {
+                let thread_index = next_thread_index.fetch_add(1, Ordering::AcqRel);
+                assert!(thread_index < num_cpus);
+                let thread_index = thread_index as usize;
 
-                        let mut wire_views = wire_views;
-                        let wire_views_start = thread_index * wire_views_per_thread;
-                        let wire_views_end = wire_views_start + wire_views_per_thread;
-                        let mut wire_views =
-                            unsafe { wire_views.subslice_mut(wire_views_start..wire_views_end) };
-                        let wire_views = Array::from_mut_slice(&mut wire_views, 0);
+                let mut vertices = vertices;
+                let vertices_start = thread_index * vertices_per_thread;
+                let vertices_end = vertices_start + vertices_per_thread;
+                let mut vertices = unsafe { vertices.subslice_mut(vertices_start..vertices_end) };
+                let vertices = Array::from_mut_slice(&mut vertices, 0);
 
-                        (
-                            RefCell::new((vertices, wire_views)),
-                            vertices_start,
-                            wire_views_start,
-                        )
-                    });
-                    let (vertices, wire_views) = &mut *arrays.borrow_mut();
+                let mut wire_views = wire_views;
+                let wire_views_start = thread_index * wire_views_per_thread;
+                let wire_views_end = wire_views_start + wire_views_per_thread;
+                let mut wire_views =
+                    unsafe { wire_views.subslice_mut(wire_views_start..wire_views_end) };
+                let wire_views = Array::from_mut_slice(&mut wire_views, 0);
 
-                    ends.clear();
-                    let vertex_offset = *vertex_offset + vertices.len;
-                    let wire_offset = *wire_offset + wire_views.len;
-
-                    let (root_start, root_end) = pick_root_path(endpoints, net.first_endpoint);
-                    if (root_start == INVALID_ENDPOINT_INDEX)
-                        || (root_end == INVALID_ENDPOINT_INDEX)
-                    {
-                        return Err(Result::InvalidArgumentError);
-                    }
-
-                    let root_wire_count = route_root_wire(
-                        graph,
-                        path_finder,
-                        net,
-                        endpoints,
-                        waypoints,
-                        root_start,
-                        root_end,
+                ThreadlocalData {
+                    mutable: RefCell::new(MutableThreadlocalData {
                         vertices,
                         wire_views,
-                        path,
-                        ends,
-                    )?;
+                        ends: Vec::new(),
+                    }),
+                    vertex_offset: vertices_start,
+                    wire_offset: wire_views_start,
+                }
+            });
 
-                    let branch_wire_count = route_branch_wires(
-                        graph,
-                        path_finder,
-                        net,
-                        endpoints,
-                        root_start,
-                        root_end,
-                        vertices,
-                        wire_views,
-                        path,
-                        ends,
-                    )?;
+            let ThreadlocalData {
+                vertex_offset,
+                wire_offset,
+                ..
+            } = *threadlocal_data;
 
-                    net_view.write(NetView {
-                        wire_offset: wire_offset.try_into().expect("too many wires"),
-                        wire_count: root_wire_count + branch_wire_count,
-                        vertex_offset: vertex_offset.try_into().expect("too many vertices"),
-                    });
+            let MutableThreadlocalData {
+                vertices,
+                wire_views,
+                ends,
+            } = &mut *threadlocal_data.mutable.borrow_mut();
 
-                    Ok(())
-                },
-            )
+            ends.clear();
+            let vertex_offset = vertex_offset + vertices.len;
+            let wire_offset = wire_offset + wire_views.len;
+
+            let (root_start, root_end) = pick_root_path(endpoints, net.first_endpoint);
+            if (root_start == INVALID_ENDPOINT_INDEX) || (root_end == INVALID_ENDPOINT_INDEX) {
+                return Err(Result::InvalidArgumentError);
+            }
+
+            let root_wire_count = route_root_wire(
+                &graph.data,
+                path_finder,
+                net,
+                endpoints,
+                waypoints,
+                root_start,
+                root_end,
+                vertices,
+                wire_views,
+                ends,
+            )?;
+
+            let branch_wire_count = route_branch_wires(
+                &graph.data,
+                path_finder,
+                net,
+                endpoints,
+                root_start,
+                root_end,
+                vertices,
+                wire_views,
+                ends,
+            )?;
+
+            net_view.write(NetView {
+                wire_offset: wire_offset.try_into().expect("too many wires"),
+                wire_count: root_wire_count + branch_wire_count,
+                vertex_offset: vertex_offset.try_into().expect("too many vertices"),
+            });
+
+            Ok(())
         });
 
     match result {

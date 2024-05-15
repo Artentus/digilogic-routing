@@ -17,16 +17,6 @@
 #define RT_MUST_USE
 #endif
 
-/**
- * Indicates no associated bounding box.
- */
-#define RT_INVALID_BOUNDING_BOX_INDEX (-1)
-
-/**
- * Indicates no associated node.
- */
-#define RT_INVALID_NODE_INDEX (-1)
-
 enum RT_Directions {
     RT_DIRECTIONS_POS_X = 1,
     RT_DIRECTIONS_NEG_X = 2,
@@ -230,6 +220,10 @@ typedef struct RT_MutSlice_NetView {
 #define RT_INVALID_ENDPOINT_INDEX UINT32_MAX
 
 #define RT_INVALID_WAYPOINT_INDEX UINT32_MAX
+
+#define RT_INVALID_NODE_INDEX UINT32_MAX
+
+#define RT_INVALID_BOUNDING_BOX_INDEX UINT32_MAX
 
 /**
  * Initializes the thread pool.
