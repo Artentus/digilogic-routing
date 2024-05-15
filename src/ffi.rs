@@ -1,6 +1,7 @@
 #![allow(unsafe_code)]
 #![deny(unsafe_op_in_unsafe_fn)]
 
+use crate::graph::{NodeIndex, INVALID_NODE_INDEX};
 use crate::*;
 use rayon::prelude::*;
 use std::mem::MaybeUninit;
@@ -18,229 +19,6 @@ pub enum Result {
     WireViewBufferOverflowError = 4,
     UninitializedError = 5,
     InvalidArgumentError = 6,
-}
-
-static NUM_CPUS: AtomicU16 = AtomicU16::new(0);
-
-/// Initializes the thread pool.
-///
-/// **Returns**  
-/// `RT_RESULT_SUCCESS`: The operation completed successfully.  
-/// `RT_RESULT_INVALID_OPERATION_ERROR`: The function was called more than once.
-#[no_mangle]
-#[must_use]
-pub unsafe extern "C" fn RT_init_thread_pool() -> Result {
-    if NUM_CPUS.load(Ordering::Acquire) == 0 {
-        let num_cpus: u16 = num_cpus::get().try_into().unwrap_or(u16::MAX);
-        assert_ne!(num_cpus, 0);
-
-        rayon::ThreadPoolBuilder::new()
-            .num_threads(num_cpus as usize)
-            .build_global()
-            .expect("unable to initialize thread pool");
-
-        NUM_CPUS.store(num_cpus, Ordering::Release);
-        Result::Success
-    } else {
-        Result::InvalidOperationError
-    }
-}
-
-/// Gets the number of threads in the pool.
-///
-/// **Parameters**  
-/// `[out] thread_count`: The number of threads in the pool.
-///
-/// **Returns**  
-/// `RT_RESULT_SUCCESS`: The operation completed successfully.  
-/// `RT_RESULT_NULL_POINTER_ERROR`: `thread_count` was `NULL`.  
-/// `RT_RESULT_UNINITIALIZED_ERROR`: The thread pool was not initialized yet.
-#[no_mangle]
-#[must_use]
-pub unsafe extern "C" fn RT_get_thread_count(thread_count: *mut u16) -> Result {
-    if thread_count.is_null() {
-        return Result::NullPointerError;
-    }
-
-    let num_cpus = NUM_CPUS.load(Ordering::Acquire);
-    if num_cpus > 0 {
-        unsafe {
-            thread_count.write(num_cpus);
-        }
-
-        Result::Success
-    } else {
-        Result::UninitializedError
-    }
-}
-
-/// Creates a new graph.
-///
-/// **Parameters**  
-/// `[out] graph`: The created graph.
-///
-/// **Returns**  
-/// `RT_RESULT_SUCCESS`: The operation completed successfully.  
-/// `RT_RESULT_NULL_POINTER_ERROR`: `graph` was `NULL`.
-#[no_mangle]
-#[must_use]
-pub unsafe extern "C" fn RT_graph_new(graph: *mut *mut Graph) -> Result {
-    if graph.is_null() {
-        return Result::NullPointerError;
-    }
-
-    let ptr = Box::into_raw(Box::new(Graph::default()));
-    unsafe {
-        graph.write(ptr);
-    }
-
-    Result::Success
-}
-
-/// Builds a graph.
-///
-/// **Parameters**  
-/// `graph`: The graph to build.  
-/// `anchors`: A list of anchor points to build the graph from.  
-/// `anchor_count`: The number of elements in `anchors`.  
-/// `bounding_boxes`: A list of bounding boxes to build the graph from.  
-/// `bounding_box_count`: The number of elements in `bounding_boxes`.  
-/// `minimal`: Whether to spend more processing time to ensure the graph is minimal.
-///
-/// **Returns**  
-/// `RT_RESULT_SUCCESS`: The operation completed successfully.  
-/// `RT_RESULT_NULL_POINTER_ERROR`: `graph`, `anchor_points` or `bounding_boxes` was `NULL`.
-#[no_mangle]
-#[must_use]
-pub unsafe extern "C" fn RT_graph_build(
-    graph: *mut Graph,
-    anchors: *const Anchor,
-    anchor_count: usize,
-    bounding_boxes: *const BoundingBox,
-    bounding_box_count: usize,
-    minimal: bool,
-) -> Result {
-    if graph.is_null() || anchors.is_null() || bounding_boxes.is_null() {
-        return Result::NullPointerError;
-    }
-
-    let graph = unsafe { &mut *graph };
-    let anchors = unsafe { std::slice::from_raw_parts(anchors, anchor_count) };
-    let bounding_boxes = unsafe { std::slice::from_raw_parts(bounding_boxes, bounding_box_count) };
-    graph.build(anchors, bounding_boxes, minimal);
-
-    Result::Success
-}
-
-/// Gets the nodes in a graph.
-///
-/// **Parameters**  
-/// `graph`: The graph to get the nodes of.  
-/// `[out] nodes`: The list of nodes in the graph.  
-/// `[out] node_count`: The number of elements in `nodes`.
-///
-/// **Returns**  
-/// `RT_RESULT_SUCCESS`: The operation completed successfully.  
-/// `RT_RESULT_NULL_POINTER_ERROR`: `graph`, `nodes` or `node_count` was `NULL`.
-#[no_mangle]
-#[must_use]
-pub unsafe extern "C" fn RT_graph_get_nodes(
-    graph: *const Graph,
-    nodes: *mut *const Node,
-    node_count: *mut usize,
-) -> Result {
-    if graph.is_null() || nodes.is_null() || node_count.is_null() {
-        return Result::NullPointerError;
-    }
-
-    let graph = unsafe { &*graph };
-    unsafe {
-        nodes.write(graph.nodes().as_ptr());
-        node_count.write(graph.nodes().len());
-    }
-
-    Result::Success
-}
-
-/// Frees a graph.
-///
-/// **Parameters**  
-/// `graph`: The graph to free.
-///
-/// **Returns**  
-/// `RT_RESULT_SUCCESS`: The operation completed successfully.  
-/// `RT_RESULT_NULL_POINTER_ERROR`: `graph` was `NULL`.
-#[no_mangle]
-#[must_use]
-pub unsafe extern "C" fn RT_graph_free(graph: *mut Graph) -> Result {
-    if graph.is_null() {
-        return Result::NullPointerError;
-    }
-
-    let graph = unsafe { Box::from_raw(graph) };
-    std::mem::drop(graph);
-
-    Result::Success
-}
-
-pub type EndpointIndex = u32;
-pub type WaypointIndex = u32;
-
-pub const INVALID_ENDPOINT_INDEX: EndpointIndex = u32::MAX;
-pub const INVALID_WAYPOINT_INDEX: WaypointIndex = u32::MAX;
-
-#[derive(Debug, Clone, Copy)]
-#[repr(C)]
-pub struct Endpoint {
-    /// The position of the endpoint.
-    pub position: Point,
-    /// The next endpoint in the net, or `RT_INVALID_ENDPOINT_INDEX` if none.
-    pub next: EndpointIndex,
-}
-
-#[derive(Debug, Clone, Copy)]
-#[repr(C)]
-pub struct Waypoint {
-    /// The position of the waypoint.
-    pub position: Point,
-    /// The next waypoint in the net, or `RT_INVALID_WAYPOINT_INDEX` if none.
-    pub next: WaypointIndex,
-}
-
-#[derive(Debug, Clone, Copy)]
-#[repr(C)]
-pub struct Net {
-    /// The first endpoint of the net.
-    pub first_endpoint: EndpointIndex,
-    /// The first waypoint of the net, or `RT_INVALID_WAYPOINT_INDEX` if none.
-    pub first_waypoint: WaypointIndex,
-}
-
-#[derive(Debug, Default, Clone, Copy, PartialEq)]
-#[repr(C)]
-pub struct Vertex {
-    /// The X coordinate of the vertex.
-    pub x: f32,
-    /// The Y coordinate of the vertex.
-    pub y: f32,
-}
-
-#[derive(Debug, Default, Clone, Copy)]
-#[repr(C)]
-pub struct WireView {
-    /// The number of vertices in this wire.
-    pub vertex_count: u16,
-}
-
-#[derive(Debug, Default, Clone, Copy)]
-#[repr(C)]
-pub struct NetView {
-    /// The offset into `wire_views` this nets wires start at.
-    pub wire_offset: u32,
-    /// The number of wires in this net.
-    pub wire_count: u32,
-    /// The offset into `vertices` this nets  vertices start at.
-    pub vertex_offset: u32,
 }
 
 #[derive(Debug, Clone, Copy)]
@@ -349,6 +127,256 @@ impl<T> MutSlice<T> {
             unsafe { std::slice::from_raw_parts_mut(self.ptr as _, self.len) }
         }
     }
+}
+
+static NUM_CPUS: AtomicU16 = AtomicU16::new(0);
+
+/// Initializes the thread pool.
+///
+/// **Returns**  
+/// `RT_RESULT_SUCCESS`: The operation completed successfully.  
+/// `RT_RESULT_INVALID_OPERATION_ERROR`: The function was called more than once.
+#[no_mangle]
+#[must_use]
+pub unsafe extern "C" fn RT_init_thread_pool() -> Result {
+    if NUM_CPUS.load(Ordering::Acquire) == 0 {
+        let num_cpus: u16 = num_cpus::get().try_into().unwrap_or(u16::MAX);
+        assert_ne!(num_cpus, 0);
+
+        rayon::ThreadPoolBuilder::new()
+            .num_threads(num_cpus as usize)
+            .build_global()
+            .expect("unable to initialize thread pool");
+
+        NUM_CPUS.store(num_cpus, Ordering::Release);
+        Result::Success
+    } else {
+        Result::InvalidOperationError
+    }
+}
+
+/// Gets the number of threads in the pool.
+///
+/// **Parameters**  
+/// `[out] thread_count`: The number of threads in the pool.
+///
+/// **Returns**  
+/// `RT_RESULT_SUCCESS`: The operation completed successfully.  
+/// `RT_RESULT_NULL_POINTER_ERROR`: `thread_count` was `NULL`.  
+/// `RT_RESULT_UNINITIALIZED_ERROR`: The thread pool was not initialized yet.
+#[no_mangle]
+#[must_use]
+pub unsafe extern "C" fn RT_get_thread_count(thread_count: *mut u16) -> Result {
+    if thread_count.is_null() {
+        return Result::NullPointerError;
+    }
+
+    let num_cpus = NUM_CPUS.load(Ordering::Acquire);
+    if num_cpus > 0 {
+        unsafe {
+            thread_count.write(num_cpus);
+        }
+
+        Result::Success
+    } else {
+        Result::UninitializedError
+    }
+}
+
+/// Creates a new graph.
+///
+/// **Parameters**  
+/// `[out] graph`: The created graph.
+///
+/// **Returns**  
+/// `RT_RESULT_SUCCESS`: The operation completed successfully.  
+/// `RT_RESULT_NULL_POINTER_ERROR`: `graph` was `NULL`.
+#[no_mangle]
+#[must_use]
+pub unsafe extern "C" fn RT_graph_new(graph: *mut *mut Graph) -> Result {
+    if graph.is_null() {
+        return Result::NullPointerError;
+    }
+
+    let ptr = Box::into_raw(Box::new(Graph::default()));
+    unsafe {
+        graph.write(ptr);
+    }
+
+    Result::Success
+}
+
+/// Builds a graph.
+///
+/// **Parameters**  
+/// `graph`: The graph to build.  
+/// `anchors`: A list of anchor points to build the graph from.  
+/// `anchor_count`: The number of elements in `anchors`.  
+/// `bounding_boxes`: A list of bounding boxes to build the graph from.  
+/// `bounding_box_count`: The number of elements in `bounding_boxes`.  
+/// `minimal`: Whether to spend more processing time to ensure the graph is minimal.
+///
+/// **Returns**  
+/// `RT_RESULT_SUCCESS`: The operation completed successfully.  
+/// `RT_RESULT_NULL_POINTER_ERROR`: `graph`, `anchor_points` or `bounding_boxes` was `NULL`.
+#[no_mangle]
+#[must_use]
+pub unsafe extern "C" fn RT_graph_build(
+    graph: *mut Graph,
+    anchors: Slice<Anchor>,
+    bounding_boxes: Slice<BoundingBox>,
+    minimal: bool,
+) -> Result {
+    if graph.is_null() || anchors.is_null() || bounding_boxes.is_null() {
+        return Result::NullPointerError;
+    }
+
+    let graph = unsafe { &mut *graph };
+    let anchors = unsafe { anchors.as_ref() };
+    let bounding_boxes = unsafe { bounding_boxes.as_ref() };
+    graph.build(anchors, bounding_boxes, minimal);
+
+    Result::Success
+}
+
+/// Gets the nodes in a graph.
+///
+/// **Parameters**  
+/// `graph`: The graph to get the nodes of.  
+/// `[out] nodes`: The list of nodes in the graph.
+///
+/// **Returns**  
+/// `RT_RESULT_SUCCESS`: The operation completed successfully.  
+/// `RT_RESULT_NULL_POINTER_ERROR`: `graph` or `nodes` was `NULL`.
+#[no_mangle]
+#[must_use]
+pub unsafe extern "C" fn RT_graph_get_nodes(
+    graph: *const Graph,
+    nodes: *mut Slice<Node>,
+) -> Result {
+    if graph.is_null() || nodes.is_null() {
+        return Result::NullPointerError;
+    }
+
+    let graph = unsafe { &*graph };
+    unsafe {
+        nodes.write(Slice {
+            ptr: graph.nodes().as_ptr(),
+            len: graph.nodes().len(),
+        });
+    }
+
+    Result::Success
+}
+
+/// Finds the node at a specific position in the graph.
+///
+/// **Parameters**  
+/// `graph`: The graph to find the node in.  
+/// `position`: The position of the node to find.  
+/// `[out] node_index`: The index of the node at the given position, or `RT_INVALID_NODE_INDEX` if none.
+///
+/// **Returns**  
+/// `RT_RESULT_SUCCESS`: The operation completed successfully.  
+/// `RT_RESULT_NULL_POINTER_ERROR`: `graph`, or `node_index` was `NULL`.
+#[no_mangle]
+#[must_use]
+pub unsafe extern "C" fn RT_graph_find_node(
+    graph: *const Graph,
+    position: Point,
+    node_index: *mut NodeIndex,
+) -> Result {
+    if graph.is_null() || node_index.is_null() {
+        return Result::NullPointerError;
+    }
+
+    let graph = unsafe { &*graph };
+    unsafe {
+        node_index.write(graph.data.find_node(position).unwrap_or(INVALID_NODE_INDEX));
+    }
+
+    Result::Success
+}
+
+/// Frees a graph.
+///
+/// **Parameters**  
+/// `graph`: The graph to free.
+///
+/// **Returns**  
+/// `RT_RESULT_SUCCESS`: The operation completed successfully.  
+/// `RT_RESULT_NULL_POINTER_ERROR`: `graph` was `NULL`.
+#[no_mangle]
+#[must_use]
+pub unsafe extern "C" fn RT_graph_free(graph: *mut Graph) -> Result {
+    if graph.is_null() {
+        return Result::NullPointerError;
+    }
+
+    let graph = unsafe { Box::from_raw(graph) };
+    std::mem::drop(graph);
+
+    Result::Success
+}
+
+pub type EndpointIndex = u32;
+pub type WaypointIndex = u32;
+
+pub const INVALID_ENDPOINT_INDEX: EndpointIndex = u32::MAX;
+pub const INVALID_WAYPOINT_INDEX: WaypointIndex = u32::MAX;
+
+#[derive(Debug, Clone, Copy)]
+#[repr(C)]
+pub struct Endpoint {
+    /// The position of the endpoint.
+    pub position: Point,
+    /// The next endpoint in the net, or `RT_INVALID_ENDPOINT_INDEX` if none.
+    pub next: EndpointIndex,
+}
+
+#[derive(Debug, Clone, Copy)]
+#[repr(C)]
+pub struct Waypoint {
+    /// The position of the waypoint.
+    pub position: Point,
+    /// The next waypoint in the net, or `RT_INVALID_WAYPOINT_INDEX` if none.
+    pub next: WaypointIndex,
+}
+
+#[derive(Debug, Clone, Copy)]
+#[repr(C)]
+pub struct Net {
+    /// The first endpoint of the net.
+    pub first_endpoint: EndpointIndex,
+    /// The first waypoint of the net, or `RT_INVALID_WAYPOINT_INDEX` if none.
+    pub first_waypoint: WaypointIndex,
+}
+
+#[derive(Debug, Default, Clone, Copy, PartialEq)]
+#[repr(C)]
+pub struct Vertex {
+    /// The X coordinate of the vertex.
+    pub x: f32,
+    /// The Y coordinate of the vertex.
+    pub y: f32,
+}
+
+#[derive(Debug, Default, Clone, Copy)]
+#[repr(C)]
+pub struct WireView {
+    /// The number of vertices in this wire.
+    pub vertex_count: u16,
+}
+
+#[derive(Debug, Default, Clone, Copy)]
+#[repr(C)]
+pub struct NetView {
+    /// The offset into `wire_views` this nets wires start at.
+    pub wire_offset: u32,
+    /// The number of wires in this net.
+    pub wire_count: u32,
+    /// The offset into `vertices` this nets  vertices start at.
+    pub vertex_offset: u32,
 }
 
 struct Array<T> {

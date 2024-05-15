@@ -70,6 +70,11 @@ typedef struct RT_Anchor {
     RT_Directions connect_directions;
 } RT_Anchor;
 
+typedef struct RT_Slice_Anchor {
+    const struct RT_Anchor *ptr;
+    size_t len;
+} RT_Slice_Anchor;
+
 typedef struct RT_BoundingBox {
     /**
      * The center of the bounding box.
@@ -84,6 +89,11 @@ typedef struct RT_BoundingBox {
      */
     uint16_t half_height;
 } RT_BoundingBox;
+
+typedef struct RT_Slice_BoundingBox {
+    const struct RT_BoundingBox *ptr;
+    size_t len;
+} RT_Slice_BoundingBox;
 
 typedef uint32_t RT_NodeIndex;
 
@@ -116,6 +126,11 @@ typedef struct RT_Node {
      */
     struct RT_NeighborList neighbors;
 } RT_Node;
+
+typedef struct RT_Slice_Node {
+    const struct RT_Node *ptr;
+    size_t len;
+} RT_Slice_Node;
 
 typedef uint32_t RT_EndpointIndex;
 
@@ -276,10 +291,8 @@ RT_MUST_USE RT_Result RT_graph_new(struct RT_Graph **graph);
  */
 RT_MUST_USE
 RT_Result RT_graph_build(struct RT_Graph *graph,
-                         const struct RT_Anchor *anchors,
-                         size_t anchor_count,
-                         const struct RT_BoundingBox *bounding_boxes,
-                         size_t bounding_box_count,
+                         struct RT_Slice_Anchor anchors,
+                         struct RT_Slice_BoundingBox bounding_boxes,
                          bool minimal);
 
 /**
@@ -288,16 +301,29 @@ RT_Result RT_graph_build(struct RT_Graph *graph,
  * **Parameters**
  * `graph`: The graph to get the nodes of.
  * `[out] nodes`: The list of nodes in the graph.
- * `[out] node_count`: The number of elements in `nodes`.
  *
  * **Returns**
  * `RT_RESULT_SUCCESS`: The operation completed successfully.
- * `RT_RESULT_NULL_POINTER_ERROR`: `graph`, `nodes` or `node_count` was `NULL`.
+ * `RT_RESULT_NULL_POINTER_ERROR`: `graph` or `nodes` was `NULL`.
+ */
+RT_MUST_USE RT_Result RT_graph_get_nodes(const struct RT_Graph *graph, struct RT_Slice_Node *nodes);
+
+/**
+ * Finds the node at a specific position in the graph.
+ *
+ * **Parameters**
+ * `graph`: The graph to find the node in.
+ * `position`: The position of the node to find.
+ * `[out] node_index`: The index of the node at the given position, or `RT_INVALID_NODE_INDEX` if none.
+ *
+ * **Returns**
+ * `RT_RESULT_SUCCESS`: The operation completed successfully.
+ * `RT_RESULT_NULL_POINTER_ERROR`: `graph`, or `node_index` was `NULL`.
  */
 RT_MUST_USE
-RT_Result RT_graph_get_nodes(const struct RT_Graph *graph,
-                             const struct RT_Node **nodes,
-                             size_t *node_count);
+RT_Result RT_graph_find_node(const struct RT_Graph *graph,
+                             struct RT_Point position,
+                             RT_NodeIndex *node_index);
 
 /**
  * Frees a graph.
