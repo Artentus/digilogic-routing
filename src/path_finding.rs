@@ -130,7 +130,7 @@ impl PathFinder {
         &'a mut self,
         graph: &GraphData,
         start: Point,
-        ends: &[Point],
+        ends: impl IntoIterator<Item = Point>,
     ) -> PathFindResult<&'a Path> {
         self.end_indices.clear();
         self.g_score.clear();
@@ -142,7 +142,7 @@ impl PathFinder {
         };
 
         let mut total_neighbor_count = 0;
-        for &end in ends {
+        for end in ends {
             let Some(end_index) = graph.find_node(end) else {
                 return PathFindResult::InvalidEndPoint;
             };

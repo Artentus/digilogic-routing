@@ -371,36 +371,128 @@ impl<T> Array<T> {
     }
 }
 
-fn pick_root_path(endpoints: &[Endpoint], first: EndpointIndex) -> (EndpointIndex, EndpointIndex) {
-    let mut max_dist = 0;
-    let mut max_pair = (INVALID_ENDPOINT_INDEX, INVALID_ENDPOINT_INDEX);
+#[derive(Clone, Copy)]
+struct EndpointList<'a> {
+    endpoints: &'a [Endpoint],
+    first: EndpointIndex,
+}
 
-    let mut a_index = first;
-    while a_index != INVALID_ENDPOINT_INDEX {
-        let a = endpoints[a_index as usize];
+impl<'a> EndpointList<'a> {
+    #[inline]
+    fn new(endpoints: &'a [Endpoint], first: EndpointIndex) -> Self {
+        Self { endpoints, first }
+    }
+}
 
-        let mut b_index = a.next;
-        while b_index != INVALID_ENDPOINT_INDEX {
-            let b = endpoints[b_index as usize];
+#[derive(Clone)]
+struct EndpointIter<'a> {
+    endpoints: &'a [Endpoint],
+    current: EndpointIndex,
+}
 
-            let dist = a.position.manhatten_distance_to(b.position);
-            if dist > max_dist {
-                max_dist = dist;
-                max_pair = (a_index, b_index);
-            }
+impl<'a> IntoIterator for EndpointList<'a> {
+    type Item = Point;
+    type IntoIter = EndpointIter<'a>;
 
-            b_index = b.next;
+    #[inline]
+    fn into_iter(self) -> Self::IntoIter {
+        EndpointIter {
+            endpoints: self.endpoints,
+            current: self.first,
+        }
+    }
+}
+
+impl Iterator for EndpointIter<'_> {
+    type Item = Point;
+
+    #[inline]
+    fn next(&mut self) -> Option<Self::Item> {
+        if self.current == INVALID_ENDPOINT_INDEX {
+            return None;
         }
 
-        a_index = a.next;
+        let endpoint = self.endpoints[self.current as usize];
+        self.current = endpoint.next;
+        Some(endpoint.position)
+    }
+}
+
+#[derive(Clone, Copy)]
+struct WaypointList<'a> {
+    waypoints: &'a [Waypoint],
+    first: WaypointIndex,
+}
+
+impl<'a> WaypointList<'a> {
+    #[inline]
+    fn new(waypoints: &'a [Waypoint], first: WaypointIndex) -> Self {
+        Self { waypoints, first }
+    }
+}
+
+#[derive(Clone)]
+struct WaypointIter<'a> {
+    waypoints: &'a [Waypoint],
+    current: WaypointIndex,
+}
+
+impl<'a> IntoIterator for WaypointList<'a> {
+    type Item = Point;
+    type IntoIter = WaypointIter<'a>;
+
+    #[inline]
+    fn into_iter(self) -> Self::IntoIter {
+        WaypointIter {
+            waypoints: self.waypoints,
+            current: self.first,
+        }
+    }
+}
+
+impl Iterator for WaypointIter<'_> {
+    type Item = Point;
+
+    #[inline]
+    fn next(&mut self) -> Option<Self::Item> {
+        if self.current == INVALID_WAYPOINT_INDEX {
+            return None;
+        }
+
+        let waypoint = self.waypoints[self.current as usize];
+        self.current = waypoint.next;
+        Some(waypoint.position)
+    }
+}
+
+fn pick_root_path(endpoints: EndpointList) -> Option<(Point, Point)> {
+    let mut max_dist = 0;
+    let mut max_pair = (Point::ZERO, Point::ZERO);
+
+    let mut count = 0;
+    let mut iter = endpoints.into_iter();
+    while let Some(a) = iter.next() {
+        count += 1;
+
+        for b in iter.clone() {
+            let dist = a.manhatten_distance_to(b);
+            if dist > max_dist {
+                max_dist = dist;
+                max_pair = (a, b);
+            }
+        }
     }
 
-    max_pair
+    if count < 2 {
+        None
+    } else {
+        Some(max_pair)
+    }
 }
 
 fn push_vertices(
     vertices: &mut Array<Vertex>,
-    path: impl Iterator<Item = Point>,
+    path: impl IntoIterator<Item = Point>,
 ) -> std::result::Result<u16, Result> {
     let mut path_len = 0usize;
 
@@ -450,32 +542,27 @@ fn push_wire_view(
 fn route_root_wire(
     graph: &GraphData,
     path_finder: &mut PathFinder,
-    net: &Net,
-    endpoints: &[Endpoint],
-    waypoints: &[Waypoint],
-    root_start: EndpointIndex,
-    root_end: EndpointIndex,
+    waypoints: WaypointList,
+    root_start: Point,
+    root_end: Point,
     vertices: &mut Array<Vertex>,
     wire_views: &mut Array<WireView>,
     ends: &mut Vec<Point>,
 ) -> std::result::Result<u32, Result> {
     let mut wire_count = 0;
 
-    let mut prev_waypoint = endpoints[root_start as usize].position;
-    let mut waypoint_index = net.first_waypoint;
-    while waypoint_index != INVALID_WAYPOINT_INDEX {
-        let waypoint = waypoints[waypoint_index as usize];
-
-        match path_finder.find_path(graph, prev_waypoint, &[waypoint.position]) {
+    let mut prev_waypoint = root_start;
+    for waypoint in waypoints {
+        match path_finder.find_path(graph, prev_waypoint, [waypoint]) {
             PathFindResult::Found(path) => {
                 ends.extend(path.iter());
                 let path_len = push_vertices(vertices, path.iter_pruned())?;
                 push_wire_view(wire_views, path_len)?;
             }
             PathFindResult::NotFound => {
-                let path = [waypoint.position, prev_waypoint];
+                let path = [waypoint, prev_waypoint];
                 ends.extend_from_slice(&path);
-                push_vertices(vertices, path.iter().copied())?;
+                push_vertices(vertices, path)?;
                 push_wire_view(wire_views, 2)?;
             }
             PathFindResult::InvalidStartPoint | PathFindResult::InvalidEndPoint => {
@@ -483,22 +570,20 @@ fn route_root_wire(
             }
         }
 
-        prev_waypoint = waypoint.position;
-        waypoint_index = waypoint.next;
+        prev_waypoint = waypoint;
         wire_count += 1;
     }
 
-    let waypoint = endpoints[root_end as usize].position;
-    match path_finder.find_path(graph, prev_waypoint, &[waypoint]) {
+    match path_finder.find_path(graph, prev_waypoint, [root_end]) {
         PathFindResult::Found(path) => {
             ends.extend(path.iter());
             let path_len = push_vertices(vertices, path.iter_pruned())?;
             push_wire_view(wire_views, path_len)?;
         }
         PathFindResult::NotFound => {
-            let path = [waypoint, prev_waypoint];
+            let path = [root_end, prev_waypoint];
             ends.extend_from_slice(&path);
-            push_vertices(vertices, path.iter().copied())?;
+            push_vertices(vertices, path)?;
             push_wire_view(wire_views, 2)?;
         }
         PathFindResult::InvalidStartPoint | PathFindResult::InvalidEndPoint => {
@@ -512,31 +597,27 @@ fn route_root_wire(
 fn route_branch_wires(
     graph: &GraphData,
     path_finder: &mut PathFinder,
-    net: &Net,
-    endpoints: &[Endpoint],
-    root_start: EndpointIndex,
-    root_end: EndpointIndex,
+    endpoints: EndpointList,
+    root_start: Point,
+    root_end: Point,
     vertices: &mut Array<Vertex>,
     wire_views: &mut Array<WireView>,
     ends: &mut Vec<Point>,
 ) -> std::result::Result<u32, Result> {
     let mut wire_count = 0;
 
-    let mut endpoint_index = net.first_endpoint;
-    while endpoint_index != INVALID_ENDPOINT_INDEX {
-        let endpoint = endpoints[endpoint_index as usize];
-
-        if (endpoint_index != root_start) && (endpoint_index != root_end) {
-            match path_finder.find_path(graph, endpoint.position, ends) {
+    for endpoint in endpoints {
+        if (endpoint != root_start) && (endpoint != root_end) {
+            match path_finder.find_path(graph, endpoint, ends.iter().copied()) {
                 PathFindResult::Found(path) => {
                     ends.extend(path.iter());
                     let path_len = push_vertices(vertices, path.iter_pruned())?;
                     push_wire_view(wire_views, path_len)?;
                 }
                 PathFindResult::NotFound => {
-                    let path = [endpoint.position, endpoints[root_start as usize].position];
+                    let path = [endpoint, root_start];
                     ends.extend_from_slice(&path);
-                    push_vertices(vertices, path.iter().copied())?;
+                    push_vertices(vertices, path)?;
                     push_wire_view(wire_views, 2)?;
                 }
                 PathFindResult::InvalidStartPoint | PathFindResult::InvalidEndPoint => {
@@ -546,8 +627,6 @@ fn route_branch_wires(
 
             wire_count += 1;
         }
-
-        endpoint_index = endpoint.next;
     }
 
     Ok(wire_count)
@@ -679,16 +758,16 @@ pub unsafe extern "C" fn RT_graph_connect_nets(
             let vertex_offset = vertex_offset + vertices.len;
             let wire_offset = wire_offset + wire_views.len;
 
-            let (root_start, root_end) = pick_root_path(endpoints, net.first_endpoint);
-            if (root_start == INVALID_ENDPOINT_INDEX) || (root_end == INVALID_ENDPOINT_INDEX) {
+            let endpoints = EndpointList::new(endpoints, net.first_endpoint);
+            let waypoints = WaypointList::new(waypoints, net.first_waypoint);
+
+            let Some((root_start, root_end)) = pick_root_path(endpoints) else {
                 return Err(Result::InvalidArgumentError);
-            }
+            };
 
             let root_wire_count = route_root_wire(
                 &graph.data,
                 path_finder,
-                net,
-                endpoints,
                 waypoints,
                 root_start,
                 root_end,
@@ -700,7 +779,6 @@ pub unsafe extern "C" fn RT_graph_connect_nets(
             let branch_wire_count = route_branch_wires(
                 &graph.data,
                 path_finder,
-                net,
                 endpoints,
                 root_start,
                 root_end,
