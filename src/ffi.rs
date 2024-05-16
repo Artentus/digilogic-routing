@@ -555,7 +555,7 @@ fn are_connected_vertically(graph: &GraphData, mut a: NodeIndex, b: NodeIndex) -
         Direction::NegY
     };
 
-    let mut through_anchor = false;
+    let mut through_anchor = node_a.is_anchor || node_b.is_anchor;
     a = node_a.neighbors[dir];
     while a != INVALID_NODE_INDEX {
         if a == b {
@@ -588,7 +588,7 @@ fn are_connected_horizontally(graph: &GraphData, mut a: NodeIndex, b: NodeIndex)
         Direction::NegX
     };
 
-    let mut through_anchor = false;
+    let mut through_anchor = node_a.is_anchor || node_b.is_anchor;
     a = node_a.neighbors[dir];
     while a != INVALID_NODE_INDEX {
         if a == b {
