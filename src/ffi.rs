@@ -584,8 +584,8 @@ fn are_connected_horizontally(graph: &GraphData, mut a: NodeIndex, b: NodeIndex)
 }
 
 fn center_in_alley(graph: &GraphData, node_a: &Node, a: &mut Point, node_b: &Node, b: &mut Point) {
-    if a.x == b.x {
-        let mut min_x = a.x;
+    if node_a.position.x == node_b.position.x {
+        let mut min_x = node_a.position.x;
         let mut current_node_a = node_a;
         let mut current_node_b = node_b;
 
@@ -611,7 +611,7 @@ fn center_in_alley(graph: &GraphData, node_a: &Node, a: &mut Point, node_b: &Nod
             min_x = current_node_a.position.x;
         }
 
-        let mut max_x = a.x;
+        let mut max_x = node_a.position.x;
         current_node_a = node_a;
         current_node_b = node_b;
 
@@ -641,9 +641,9 @@ fn center_in_alley(graph: &GraphData, node_a: &Node, a: &mut Point, node_b: &Nod
         a.x = center_x;
         b.x = center_x;
     } else {
-        assert_eq!(a.y, b.y);
+        assert_eq!(node_a.position.y, node_b.position.y);
 
-        let mut min_y = a.y;
+        let mut min_y = node_a.position.y;
         let mut current_node_a = node_a;
         let mut current_node_b = node_b;
 
@@ -669,7 +669,7 @@ fn center_in_alley(graph: &GraphData, node_a: &Node, a: &mut Point, node_b: &Nod
             min_y = current_node_a.position.y;
         }
 
-        let mut max_y = a.y;
+        let mut max_y = node_a.position.y;
         current_node_a = node_a;
         current_node_b = node_b;
 
