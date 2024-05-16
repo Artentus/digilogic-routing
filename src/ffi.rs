@@ -537,7 +537,14 @@ fn push_vertex(vertices: &mut Array<Vertex>, point: Point) -> std::result::Resul
     Ok(())
 }
 
-fn are_connected_vertically(graph: &GraphData, mut a: NodeIndex, b: NodeIndex) -> bool {
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum ConnectionKind {
+    Connected,
+    ConnectedThroughAnchor,
+    Unconnected,
+}
+
+fn are_connected_vertically(graph: &GraphData, mut a: NodeIndex, b: NodeIndex) -> ConnectionKind {
     let node_a = &graph.nodes[a];
     let node_b = &graph.nodes[b];
 
@@ -548,19 +555,29 @@ fn are_connected_vertically(graph: &GraphData, mut a: NodeIndex, b: NodeIndex) -
         Direction::NegY
     };
 
+    let mut through_anchor = false;
     a = node_a.neighbors[dir];
     while a != INVALID_NODE_INDEX {
         if a == b {
-            return true;
+            return if through_anchor {
+                ConnectionKind::ConnectedThroughAnchor
+            } else {
+                ConnectionKind::Connected
+            };
         }
 
-        a = graph.nodes[a].neighbors[dir];
+        let node = &graph.nodes[a];
+        if node.is_anchor {
+            through_anchor = true;
+        }
+
+        a = node.neighbors[dir];
     }
 
-    false
+    ConnectionKind::Unconnected
 }
 
-fn are_connected_horizontally(graph: &GraphData, mut a: NodeIndex, b: NodeIndex) -> bool {
+fn are_connected_horizontally(graph: &GraphData, mut a: NodeIndex, b: NodeIndex) -> ConnectionKind {
     let node_a = &graph.nodes[a];
     let node_b = &graph.nodes[b];
 
@@ -571,16 +588,26 @@ fn are_connected_horizontally(graph: &GraphData, mut a: NodeIndex, b: NodeIndex)
         Direction::NegX
     };
 
+    let mut through_anchor = false;
     a = node_a.neighbors[dir];
     while a != INVALID_NODE_INDEX {
         if a == b {
-            return true;
+            return if through_anchor {
+                ConnectionKind::ConnectedThroughAnchor
+            } else {
+                ConnectionKind::Connected
+            };
         }
 
-        a = graph.nodes[a].neighbors[dir];
+        let node = &graph.nodes[a];
+        if node.is_anchor {
+            through_anchor = true;
+        }
+
+        a = node.neighbors[dir];
     }
 
-    false
+    ConnectionKind::Unconnected
 }
 
 fn center_in_alley(graph: &GraphData, node_a: &Node, a: &mut Point, node_b: &Node, b: &mut Point) {
@@ -606,11 +633,17 @@ fn center_in_alley(graph: &GraphData, node_a: &Node, a: &mut Point, node_b: &Nod
                 break;
             }
 
-            if !are_connected_vertically(graph, next_a_index, next_b_index) {
-                break;
+            match are_connected_vertically(graph, next_a_index, next_b_index) {
+                ConnectionKind::Connected => {
+                    min_x = current_node_a.position.x;
+                    continue;
+                }
+                ConnectionKind::ConnectedThroughAnchor => {
+                    min_x = current_node_a.position.x;
+                    break;
+                }
+                ConnectionKind::Unconnected => break,
             }
-
-            min_x = current_node_a.position.x;
         }
 
         current_node_a = node_a;
@@ -631,11 +664,17 @@ fn center_in_alley(graph: &GraphData, node_a: &Node, a: &mut Point, node_b: &Nod
                 break;
             }
 
-            if !are_connected_vertically(graph, next_a_index, next_b_index) {
-                break;
+            match are_connected_vertically(graph, next_a_index, next_b_index) {
+                ConnectionKind::Connected => {
+                    min_x = current_node_a.position.x;
+                    continue;
+                }
+                ConnectionKind::ConnectedThroughAnchor => {
+                    min_x = current_node_a.position.x;
+                    break;
+                }
+                ConnectionKind::Unconnected => break,
             }
-
-            max_x = current_node_a.position.x;
         }
 
         let center_x = (min_x + max_x) / 2;
@@ -665,11 +704,17 @@ fn center_in_alley(graph: &GraphData, node_a: &Node, a: &mut Point, node_b: &Nod
                 break;
             }
 
-            if !are_connected_horizontally(graph, next_a_index, next_b_index) {
-                break;
+            match are_connected_horizontally(graph, next_a_index, next_b_index) {
+                ConnectionKind::Connected => {
+                    min_y = current_node_a.position.y;
+                    continue;
+                }
+                ConnectionKind::ConnectedThroughAnchor => {
+                    min_y = current_node_a.position.y;
+                    break;
+                }
+                ConnectionKind::Unconnected => break,
             }
-
-            min_y = current_node_a.position.y;
         }
 
         current_node_a = node_a;
@@ -690,11 +735,17 @@ fn center_in_alley(graph: &GraphData, node_a: &Node, a: &mut Point, node_b: &Nod
                 break;
             }
 
-            if !are_connected_horizontally(graph, next_a_index, next_b_index) {
-                break;
+            match are_connected_horizontally(graph, next_a_index, next_b_index) {
+                ConnectionKind::Connected => {
+                    min_y = current_node_a.position.y;
+                    continue;
+                }
+                ConnectionKind::ConnectedThroughAnchor => {
+                    min_y = current_node_a.position.y;
+                    break;
+                }
+                ConnectionKind::Unconnected => break,
             }
-
-            max_y = current_node_a.position.y;
         }
 
         let center_y = (min_y + max_y) / 2;

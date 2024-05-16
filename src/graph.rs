@@ -366,6 +366,8 @@ pub struct Node {
     pub position: Point,
     /// The neighbors of the node.
     pub(crate) neighbors: NeighborList,
+    /// Whether this node was created from an anchor.
+    pub is_anchor: bool,
 }
 
 impl Node {
@@ -405,13 +407,14 @@ impl NodeList {
     }
 
     #[inline]
-    fn push(&mut self, point: Point) -> NodeIndex {
+    fn push(&mut self, point: Point, is_anchor: bool) -> NodeIndex {
         let index: NodeIndex = self.0.len().try_into().expect("too many nodes");
         assert_ne!(index, INVALID_NODE_INDEX, "too many nodes");
 
         self.0.push(Node {
             position: point,
             neighbors: NeighborList::new(),
+            is_anchor,
         });
 
         index
@@ -764,7 +767,7 @@ fn node_index(
     match node_map.entry(point) {
         Entry::Occupied(entry) => (*entry.get(), true),
         Entry::Vacant(entry) => {
-            let index = nodes.push(point);
+            let index = nodes.push(point, false);
             entry.insert(index);
             (index, false)
         }
@@ -1339,20 +1342,10 @@ impl GraphData {
 
         let auto_anchors = bounding_boxes.iter().flat_map(|&bb| {
             [
-                // corners
                 Anchor::new(bb.min_x() - 1, bb.min_y() - 1),
                 Anchor::new(bb.min_x() - 1, bb.max_y() + 1),
                 Anchor::new(bb.max_x() + 1, bb.min_y() - 1),
                 Anchor::new(bb.max_x() + 1, bb.max_y() + 1),
-                // alley "blockers"
-                Anchor::new(bb.min_x() - 1, bb.min_y()).with_connect_direction(Directions::Y),
-                Anchor::new(bb.min_x() - 1, bb.max_y()).with_connect_direction(Directions::Y),
-                Anchor::new(bb.max_x() + 1, bb.min_y()).with_connect_direction(Directions::Y),
-                Anchor::new(bb.max_x() + 1, bb.max_y()).with_connect_direction(Directions::Y),
-                Anchor::new(bb.min_x(), bb.min_y() - 1).with_connect_direction(Directions::X),
-                Anchor::new(bb.max_x(), bb.min_y() - 1).with_connect_direction(Directions::X),
-                Anchor::new(bb.min_x(), bb.max_y() + 1).with_connect_direction(Directions::X),
-                Anchor::new(bb.max_x(), bb.max_y() + 1).with_connect_direction(Directions::X),
             ]
         });
 
@@ -1380,7 +1373,7 @@ impl GraphData {
             match self.node_map.entry(anchor.position) {
                 Entry::Occupied(_) => (),
                 Entry::Vacant(entry) => {
-                    let index = self.nodes.push(anchor.position);
+                    let index = self.nodes.push(anchor.position, true);
                     entry.insert(index);
                 }
             }
