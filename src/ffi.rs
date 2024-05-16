@@ -666,11 +666,11 @@ fn center_in_alley(graph: &GraphData, node_a: &Node, a: &mut Point, node_b: &Nod
 
             match are_connected_vertically(graph, next_a_index, next_b_index) {
                 ConnectionKind::Connected => {
-                    min_x = current_node_a.position.x;
+                    max_x = current_node_a.position.x;
                     continue;
                 }
                 ConnectionKind::ConnectedThroughAnchor => {
-                    min_x = current_node_a.position.x;
+                    max_x = current_node_a.position.x;
                     break;
                 }
                 ConnectionKind::Unconnected => break,
@@ -737,11 +737,11 @@ fn center_in_alley(graph: &GraphData, node_a: &Node, a: &mut Point, node_b: &Nod
 
             match are_connected_horizontally(graph, next_a_index, next_b_index) {
                 ConnectionKind::Connected => {
-                    min_y = current_node_a.position.y;
+                    max_y = current_node_a.position.y;
                     continue;
                 }
                 ConnectionKind::ConnectedThroughAnchor => {
-                    min_y = current_node_a.position.y;
+                    max_y = current_node_a.position.y;
                     break;
                 }
                 ConnectionKind::Unconnected => break,
