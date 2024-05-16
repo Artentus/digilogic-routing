@@ -706,46 +706,38 @@ fn center_in_alley(graph: &GraphData, node_a: &Node, a: &mut Point, node_b: &Nod
 fn push_vertices(
     graph: &GraphData,
     vertices: &mut Array<Vertex>,
-    path: impl IntoIterator<Item = Point>,
+    path: impl IntoIterator<Item = PathNode>,
 ) -> std::result::Result<u16, Result> {
     let mut path_len = 0usize;
 
-    let mut point_b = None;
-    let mut point_c = None;
-    let mut point_d = None;
+    let mut prev: Option<(PathNode, &Node)> = None;
+    for mut path_node in path {
+        let node = &graph.nodes[graph
+            .find_node(path_node.position)
+            .expect("invalid wire vertex")];
 
-    for point in path {
-        let node = &graph.nodes[graph.find_node(point).expect("invalid wire vertex")];
-
-        let point_a = point_b;
-        point_b = point_c;
-        point_c = point_d;
-        point_d = Some((node, point));
-
-        if let Some((_, point_a)) = point_a {
-            push_vertex(vertices, point_a)?;
-            path_len += 1;
-
-            if let Some(((node_b, point_b), (node_c, point_c))) =
-                point_b.as_mut().zip(point_c.as_mut())
+        if let Some((mut prev_path_node, prev_node)) = prev {
+            if (prev_path_node.kind == PathNodeKind::Normal)
+                && (path_node.kind == PathNodeKind::Normal)
             {
-                center_in_alley(graph, node_b, point_b, node_c, point_c);
+                center_in_alley(
+                    graph,
+                    prev_node,
+                    &mut prev_path_node.position,
+                    node,
+                    &mut path_node.position,
+                );
             }
+
+            push_vertex(vertices, prev_path_node.position)?;
+            path_len += 1;
         }
+
+        prev = Some((path_node, node));
     }
 
-    if let Some((_, point_b)) = point_b {
-        push_vertex(vertices, point_b)?;
-        path_len += 1;
-    }
-
-    if let Some((_, point_c)) = point_c {
-        push_vertex(vertices, point_c)?;
-        path_len += 1;
-    }
-
-    if let Some((_, point_d)) = point_d {
-        push_vertex(vertices, point_d)?;
+    if let Some((prev_path_node, _)) = prev {
+        push_vertex(vertices, prev_path_node.position)?;
         path_len += 1;
     }
 
@@ -790,13 +782,22 @@ fn route_root_wire(
         true,
     ) {
         PathFindResult::Found(path) => {
-            ends.extend(path.iter());
+            ends.extend(path.iter().map(|path_node| path_node.position));
             let path_len = push_vertices(graph, vertices, path.iter_pruned())?;
             push_wire_view(wire_views, path_len)?;
         }
         PathFindResult::NotFound => {
-            let path = [root_start, root_end];
-            ends.extend_from_slice(&path);
+            let path = [
+                PathNode {
+                    position: root_start,
+                    kind: PathNodeKind::Start,
+                },
+                PathNode {
+                    position: root_end,
+                    kind: PathNodeKind::End,
+                },
+            ];
+            ends.extend(path.iter().map(|path_node| path_node.position));
             push_vertices(graph, vertices, path)?;
             push_wire_view(wire_views, 2)?;
         }
@@ -824,13 +825,22 @@ fn route_branch_wires(
         if (endpoint != root_start) && (endpoint != root_end) {
             match path_finder.find_path(graph, endpoint, ends.iter().copied(), false) {
                 PathFindResult::Found(path) => {
-                    ends.extend(path.iter());
+                    ends.extend(path.iter().map(|path_node| path_node.position));
                     let path_len = push_vertices(graph, vertices, path.iter_pruned())?;
                     push_wire_view(wire_views, path_len)?;
                 }
                 PathFindResult::NotFound => {
-                    let path = [endpoint, root_start];
-                    ends.extend_from_slice(&path);
+                    let path = [
+                        PathNode {
+                            position: endpoint,
+                            kind: PathNodeKind::Start,
+                        },
+                        PathNode {
+                            position: root_start,
+                            kind: PathNodeKind::End,
+                        },
+                    ];
+                    ends.extend(path.iter().map(|path_node| path_node.position));
                     push_vertices(graph, vertices, path)?;
                     push_wire_view(wire_views, 2)?;
                 }

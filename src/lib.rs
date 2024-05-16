@@ -13,7 +13,7 @@ use std::cell::RefCell;
 use thread_local::ThreadLocal;
 
 pub use graph::{Anchor, BoundingBox, BoundingBoxIndex, Direction, Directions, Node, Point};
-pub use path_finding::{Path, PathFindResult};
+pub use path_finding::{Path, PathFindResult, PathNode, PathNodeKind};
 
 type HashSet<T> = ahash::AHashSet<T>;
 type HashMap<K, V> = ahash::AHashMap<K, V>;

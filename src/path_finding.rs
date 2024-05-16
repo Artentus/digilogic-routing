@@ -24,32 +24,52 @@ impl<T> PathFindResult<T> {
     }
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum PathNodeKind {
+    Normal,
+    Start,
+    End,
+    Waypoint,
+}
+
+#[derive(Debug, Clone, Copy)]
+pub struct PathNode {
+    pub position: Point,
+    pub kind: PathNodeKind,
+}
+
 #[derive(Default, Clone)]
 pub struct Path {
     points: Vec<Point>,
-    dirs: Vec<Option<Direction>>,
+    meta: Vec<(PathNodeKind, Option<Direction>)>,
 }
 
 impl Path {
     #[inline]
     fn clear(&mut self) {
         self.points.clear();
-        self.dirs.clear();
+        self.meta.clear();
     }
 
     #[inline]
-    pub fn iter(&self) -> impl Iterator<Item = Point> + '_ {
-        self.points.iter().copied()
+    pub fn iter(&self) -> impl Iterator<Item = PathNode> + '_ {
+        self.points
+            .iter()
+            .zip(&self.meta)
+            .map(move |(&point, &(kind, _))| PathNode {
+                position: point,
+                kind,
+            })
     }
 
-    pub fn iter_pruned(&self) -> impl Iterator<Item = Point> + '_ {
-        assert_eq!(self.points.len(), self.dirs.len());
+    pub fn iter_pruned(&self) -> impl Iterator<Item = PathNode> + '_ {
+        assert_eq!(self.points.len(), self.meta.len());
 
         let mut prev_dir: Option<Direction> = None;
         self.points
             .iter()
-            .zip(&self.dirs)
-            .filter_map(move |(&point, &dir)| {
+            .zip(&self.meta)
+            .filter_map(move |(&point, &(kind, dir))| {
                 let include = match (dir, prev_dir) {
                     (Some(dir), Some(prev_dir)) => dir != prev_dir,
                     _ => true,
@@ -58,7 +78,10 @@ impl Path {
                 prev_dir = dir;
 
                 if include {
-                    Some(point)
+                    Some(PathNode {
+                        position: point,
+                        kind,
+                    })
                 } else {
                     None
                 }
@@ -101,15 +124,21 @@ impl PathFinder {
     fn assert_data_is_valid(&self, _graph: &GraphData) {}
 
     fn build_path(&mut self, graph: &GraphData, end_index: NodeIndex) {
+        assert_eq!(self.path.points.len(), self.path.meta.len());
+
         // If there was a previous path segment, don't duplicate the joining point.
         if self.path.points.len() > 0 {
             self.path.points.pop();
-            self.path.dirs.pop();
+            assert_eq!(
+                self.path.meta.pop(),
+                Some((PathNodeKind::End, None)),
+                "invalid end node",
+            );
         }
 
         let insert_index = self.path.points.len();
         self.path.points.push(graph.nodes[end_index].position);
-        self.path.dirs.push(None);
+        self.path.meta.push((PathNodeKind::End, None));
 
         let mut current_index = end_index;
         // The final node in the path has no predecessor.
@@ -122,10 +151,18 @@ impl PathFinder {
                 .expect("invalid predecessor");
 
             self.path.points.insert(insert_index, pred.position);
-            self.path.dirs.insert(insert_index, Some(dir));
+            self.path
+                .meta
+                .insert(insert_index, (PathNodeKind::Normal, Some(dir)));
 
             current_index = pred_index;
         }
+
+        self.path.meta[insert_index].0 = if insert_index == 0 {
+            PathNodeKind::Start
+        } else {
+            PathNodeKind::Waypoint
+        };
     }
 
     /// A* path finding.
