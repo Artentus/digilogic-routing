@@ -127,7 +127,7 @@ fn two_bends_impl(minimal: bool) {
     const BOUNDING_BOXES: &[BoundingBox] = &[BoundingBox {
         center: Point { x: 2, y: 0 },
         half_width: 1,
-        half_height: 1,
+        half_height: 2,
     }];
 
     let mut graph = Graph::default();

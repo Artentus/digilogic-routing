@@ -710,6 +710,7 @@ fn push_vertices(
 ) -> std::result::Result<u16, Result> {
     let mut path_len = 0usize;
 
+    let mut prev_prev_dir = None;
     let mut prev: Option<(PathNode, &Node)> = None;
     for mut path_node in path {
         let node = &graph.nodes[graph
@@ -719,6 +720,7 @@ fn push_vertices(
         if let Some((mut prev_path_node, prev_node)) = prev {
             if (prev_path_node.kind == PathNodeKind::Normal)
                 && (path_node.kind == PathNodeKind::Normal)
+                && (prev_prev_dir != Some(path_node.bend_direction.map(Direction::opposite)))
             {
                 center_in_alley(
                     graph,
@@ -733,6 +735,7 @@ fn push_vertices(
             path_len += 1;
         }
 
+        prev_prev_dir = prev.map(|(prev_path_node, _)| prev_path_node.bend_direction);
         prev = Some((path_node, node));
     }
 
@@ -791,10 +794,12 @@ fn route_root_wire(
                 PathNode {
                     position: root_start,
                     kind: PathNodeKind::Start,
+                    bend_direction: None,
                 },
                 PathNode {
                     position: root_end,
                     kind: PathNodeKind::End,
+                    bend_direction: None,
                 },
             ];
             ends.extend(path.iter().map(|path_node| path_node.position));
@@ -834,10 +839,12 @@ fn route_branch_wires(
                         PathNode {
                             position: endpoint,
                             kind: PathNodeKind::Start,
+                            bend_direction: None,
                         },
                         PathNode {
                             position: root_start,
                             kind: PathNodeKind::End,
+                            bend_direction: None,
                         },
                     ];
                     ends.extend(path.iter().map(|path_node| path_node.position));

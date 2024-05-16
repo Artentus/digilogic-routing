@@ -36,60 +36,45 @@ pub enum PathNodeKind {
 pub struct PathNode {
     pub position: Point,
     pub kind: PathNodeKind,
+    pub bend_direction: Option<Direction>,
 }
 
 #[derive(Default, Clone)]
 pub struct Path {
-    points: Vec<Point>,
-    meta: Vec<(PathNodeKind, Option<Direction>)>,
+    nodes: Vec<PathNode>,
 }
 
 impl Path {
     #[inline]
     fn clear(&mut self) {
-        self.points.clear();
-        self.meta.clear();
+        self.nodes.clear();
     }
 
     #[inline]
     pub fn iter(&self) -> impl Iterator<Item = PathNode> + '_ {
-        self.points
-            .iter()
-            .zip(&self.meta)
-            .map(move |(&point, &(kind, _))| PathNode {
-                position: point,
-                kind,
-            })
+        self.nodes.iter().copied()
     }
 
     pub fn iter_pruned(&self) -> impl Iterator<Item = PathNode> + '_ {
-        assert_eq!(self.points.len(), self.meta.len());
-
         let mut prev_dir: Option<Direction> = None;
-        self.points
-            .iter()
-            .zip(&self.meta)
-            .filter_map(move |(&point, &(kind, dir))| {
-                let include = if kind == PathNodeKind::Normal {
-                    match (dir, prev_dir) {
-                        (Some(dir), Some(prev_dir)) => dir != prev_dir,
-                        _ => true,
-                    }
-                } else {
-                    true
-                };
-
-                prev_dir = dir;
-
-                if include {
-                    Some(PathNode {
-                        position: point,
-                        kind,
-                    })
-                } else {
-                    None
+        self.nodes.iter().filter_map(move |&node| {
+            let include = if node.kind == PathNodeKind::Normal {
+                match (node.bend_direction, prev_dir) {
+                    (Some(dir), Some(prev_dir)) => dir != prev_dir,
+                    _ => true,
                 }
-            })
+            } else {
+                true
+            };
+
+            prev_dir = node.bend_direction;
+
+            if include {
+                Some(node)
+            } else {
+                None
+            }
+        })
     }
 }
 
@@ -128,21 +113,28 @@ impl PathFinder {
     fn assert_data_is_valid(&self, _graph: &GraphData) {}
 
     fn build_path(&mut self, graph: &GraphData, end_index: NodeIndex) {
-        assert_eq!(self.path.points.len(), self.path.meta.len());
-
         // If there was a previous path segment, don't duplicate the joining point.
-        if self.path.points.len() > 0 {
-            self.path.points.pop();
-            assert_eq!(
-                self.path.meta.pop(),
-                Some((PathNodeKind::End, None)),
+        if self.path.nodes.len() > 0 {
+            let prev_end = self.path.nodes.pop();
+            assert!(
+                matches!(
+                    prev_end,
+                    Some(PathNode {
+                        kind: PathNodeKind::End,
+                        bend_direction: None,
+                        ..
+                    }),
+                ),
                 "invalid end node",
             );
         }
 
-        let insert_index = self.path.points.len();
-        self.path.points.push(graph.nodes[end_index].position);
-        self.path.meta.push((PathNodeKind::End, None));
+        let insert_index = self.path.nodes.len();
+        self.path.nodes.push(PathNode {
+            position: graph.nodes[end_index].position,
+            kind: PathNodeKind::End,
+            bend_direction: None,
+        });
 
         let mut current_index = end_index;
         // The final node in the path has no predecessor.
@@ -154,15 +146,19 @@ impl PathFinder {
                 .find(current_index)
                 .expect("invalid predecessor");
 
-            self.path.points.insert(insert_index, pred.position);
-            self.path
-                .meta
-                .insert(insert_index, (PathNodeKind::Normal, Some(dir)));
+            self.path.nodes.insert(
+                insert_index,
+                PathNode {
+                    position: pred.position,
+                    kind: PathNodeKind::Normal,
+                    bend_direction: Some(dir),
+                },
+            );
 
             current_index = pred_index;
         }
 
-        self.path.meta[insert_index].0 = if insert_index == 0 {
+        self.path.nodes[insert_index].kind = if insert_index == 0 {
             PathNodeKind::Start
         } else {
             PathNodeKind::Waypoint
@@ -305,7 +301,7 @@ impl PathFinder {
             break 'outer;
         }
 
-        if self.path.points.len() > 0 {
+        if self.path.nodes.len() > 0 {
             PathFindResult::Found(&self.path)
         } else {
             PathFindResult::NotFound
