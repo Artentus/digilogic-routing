@@ -518,28 +518,231 @@ fn pick_root_path(endpoints: EndpointList) -> Option<(Point, Point)> {
     }
 }
 
+fn push_vertex(vertices: &mut Array<Vertex>, point: Point) -> std::result::Result<(), Result> {
+    let Some(new_len) = vertices.len.checked_add(1) else {
+        return Err(Result::VertexBufferOverflowError);
+    };
+    if vertices.cap < new_len {
+        return Err(Result::VertexBufferOverflowError);
+    }
+
+    unsafe {
+        vertices.ptr.add(vertices.len).write(Vertex {
+            x: point.x as f32,
+            y: point.y as f32,
+        });
+    }
+
+    vertices.len = new_len;
+    Ok(())
+}
+
+fn are_connected_vertically(graph: &GraphData, mut a: NodeIndex, b: NodeIndex) -> bool {
+    let node_a = &graph.nodes[a];
+    let node_b = &graph.nodes[b];
+
+    let dir = if node_a.position.y < node_b.position.y {
+        Direction::PosY
+    } else {
+        assert!(node_a.position.y > node_b.position.y);
+        Direction::NegY
+    };
+
+    a = node_a.neighbors[dir];
+    while a != INVALID_NODE_INDEX {
+        if a == b {
+            return true;
+        }
+
+        a = graph.nodes[a].neighbors[dir];
+    }
+
+    false
+}
+
+fn are_connected_horizontally(graph: &GraphData, mut a: NodeIndex, b: NodeIndex) -> bool {
+    let node_a = &graph.nodes[a];
+    let node_b = &graph.nodes[b];
+
+    let dir = if node_a.position.x < node_b.position.x {
+        Direction::PosX
+    } else {
+        assert!(node_a.position.x > node_b.position.x);
+        Direction::NegX
+    };
+
+    a = node_a.neighbors[dir];
+    while a != INVALID_NODE_INDEX {
+        if a == b {
+            return true;
+        }
+
+        a = graph.nodes[a].neighbors[dir];
+    }
+
+    false
+}
+
+fn center_in_alley(graph: &GraphData, a: &mut Point, b: &mut Point) {
+    let node_a = &graph.nodes[graph.find_node(*a).expect("invalid wire vertex")];
+    let node_b = &graph.nodes[graph.find_node(*b).expect("invalid wire vertex")];
+
+    if a.x == b.x {
+        let mut min_x = a.x;
+        let mut current_node_a = node_a;
+        let mut current_node_b = node_b;
+
+        loop {
+            let next_a_index = current_node_a.neighbors[Direction::NegX];
+            let next_b_index = current_node_b.neighbors[Direction::NegX];
+
+            if (next_a_index == INVALID_NODE_INDEX) || (next_b_index == INVALID_NODE_INDEX) {
+                break;
+            }
+
+            current_node_a = &graph.nodes[next_a_index];
+            current_node_b = &graph.nodes[next_b_index];
+
+            if current_node_a.position.x != current_node_b.position.x {
+                break;
+            }
+
+            if !are_connected_vertically(graph, next_a_index, next_b_index) {
+                break;
+            }
+
+            min_x = current_node_a.position.x;
+        }
+
+        let mut max_x = a.x;
+        current_node_a = node_a;
+        current_node_b = node_b;
+
+        loop {
+            let next_a_index = current_node_a.neighbors[Direction::PosX];
+            let next_b_index = current_node_b.neighbors[Direction::PosX];
+
+            if (next_a_index == INVALID_NODE_INDEX) || (next_b_index == INVALID_NODE_INDEX) {
+                break;
+            }
+
+            current_node_a = &graph.nodes[next_a_index];
+            current_node_b = &graph.nodes[next_b_index];
+
+            if current_node_a.position.x != current_node_b.position.x {
+                break;
+            }
+
+            if !are_connected_vertically(graph, next_a_index, next_b_index) {
+                break;
+            }
+
+            max_x = current_node_a.position.x;
+        }
+
+        let center_x = (min_x + max_x) / 2;
+        a.x = center_x;
+        b.x = center_x;
+    } else {
+        assert_eq!(a.y, b.y);
+
+        let mut min_y = a.y;
+        let mut current_node_a = node_a;
+        let mut current_node_b = node_b;
+
+        loop {
+            let next_a_index = current_node_a.neighbors[Direction::NegY];
+            let next_b_index = current_node_b.neighbors[Direction::NegY];
+
+            if (next_a_index == INVALID_NODE_INDEX) || (next_b_index == INVALID_NODE_INDEX) {
+                break;
+            }
+
+            current_node_a = &graph.nodes[next_a_index];
+            current_node_b = &graph.nodes[next_b_index];
+
+            if current_node_a.position.y != current_node_b.position.y {
+                break;
+            }
+
+            if !are_connected_horizontally(graph, next_a_index, next_b_index) {
+                break;
+            }
+
+            min_y = current_node_a.position.y;
+        }
+
+        let mut max_y = a.y;
+        current_node_a = node_a;
+        current_node_b = node_b;
+
+        loop {
+            let next_a_index = current_node_a.neighbors[Direction::PosY];
+            let next_b_index = current_node_b.neighbors[Direction::PosY];
+
+            if (next_a_index == INVALID_NODE_INDEX) || (next_b_index == INVALID_NODE_INDEX) {
+                break;
+            }
+
+            current_node_a = &graph.nodes[next_a_index];
+            current_node_b = &graph.nodes[next_b_index];
+
+            if current_node_a.position.y != current_node_b.position.y {
+                break;
+            }
+
+            if !are_connected_horizontally(graph, next_a_index, next_b_index) {
+                break;
+            }
+
+            max_y = current_node_a.position.y;
+        }
+
+        let center_y = (min_y + max_y) / 2;
+        a.y = center_y;
+        b.y = center_y;
+    }
+}
+
 fn push_vertices(
+    graph: &GraphData,
     vertices: &mut Array<Vertex>,
     path: impl IntoIterator<Item = Point>,
 ) -> std::result::Result<u16, Result> {
     let mut path_len = 0usize;
 
+    let mut point_b = None;
+    let mut point_c = None;
+    let mut point_d = None;
+
     for point in path {
-        let Some(new_len) = vertices.len.checked_add(1) else {
-            return Err(Result::VertexBufferOverflowError);
-        };
-        if vertices.cap < new_len {
-            return Err(Result::VertexBufferOverflowError);
-        }
+        let point_a = point_b;
+        point_b = point_c;
+        point_c = point_d;
+        point_d = Some(point);
 
-        unsafe {
-            vertices.ptr.add(vertices.len).write(Vertex {
-                x: point.x as f32,
-                y: point.y as f32,
-            });
-        }
+        if let Some(point_a) = point_a {
+            push_vertex(vertices, point_a)?;
+            path_len += 1;
 
-        vertices.len = new_len;
+            if let Some((point_b, point_c)) = point_b.as_mut().zip(point_c.as_mut()) {
+                center_in_alley(graph, point_b, point_c);
+            }
+        }
+    }
+
+    if let Some(point_b) = point_b {
+        push_vertex(vertices, point_b)?;
+        path_len += 1;
+    }
+
+    if let Some(point_c) = point_c {
+        push_vertex(vertices, point_c)?;
+        path_len += 1;
+    }
+
+    if let Some(point_d) = point_d {
+        push_vertex(vertices, point_d)?;
         path_len += 1;
     }
 
@@ -585,13 +788,13 @@ fn route_root_wire(
     ) {
         PathFindResult::Found(path) => {
             ends.extend(path.iter());
-            let path_len = push_vertices(vertices, path.iter_pruned())?;
+            let path_len = push_vertices(graph, vertices, path.iter_pruned())?;
             push_wire_view(wire_views, path_len)?;
         }
         PathFindResult::NotFound => {
             let path = [root_start, root_end];
             ends.extend_from_slice(&path);
-            push_vertices(vertices, path)?;
+            push_vertices(graph, vertices, path)?;
             push_wire_view(wire_views, 2)?;
         }
         PathFindResult::InvalidStartPoint | PathFindResult::InvalidEndPoint => {
@@ -619,13 +822,13 @@ fn route_branch_wires(
             match path_finder.find_path(graph, endpoint, ends.iter().copied(), false) {
                 PathFindResult::Found(path) => {
                     ends.extend(path.iter());
-                    let path_len = push_vertices(vertices, path.iter_pruned())?;
+                    let path_len = push_vertices(graph, vertices, path.iter_pruned())?;
                     push_wire_view(wire_views, path_len)?;
                 }
                 PathFindResult::NotFound => {
                     let path = [endpoint, root_start];
                     ends.extend_from_slice(&path);
-                    push_vertices(vertices, path)?;
+                    push_vertices(graph, vertices, path)?;
                     push_wire_view(wire_views, 2)?;
                 }
                 PathFindResult::InvalidStartPoint | PathFindResult::InvalidEndPoint => {

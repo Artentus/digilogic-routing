@@ -128,9 +128,9 @@ fn two_bends_impl(minimal: bool) {
     graph.build(
         ANCHORS,
         &[BoundingBox {
-            center: Point { x: 2, y: 1 },
+            center: Point { x: 2, y: 0 },
             half_width: 1,
-            half_height: 2,
+            half_height: 1,
         }],
         minimal,
     );
@@ -140,8 +140,8 @@ fn two_bends_impl(minimal: bool) {
         [Point { x: 0, y: 0 }, Point { x: 4, y: 0 }],
         &[
             Vertex { x: 0.0, y: 0.0 },
-            Vertex { x: 0.0, y: 4.0 },
-            Vertex { x: 4.0, y: 4.0 },
+            Vertex { x: 0.0, y: 3.0 },
+            Vertex { x: 4.0, y: 3.0 },
             Vertex { x: 4.0, y: 0.0 },
         ],
     );
