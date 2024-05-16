@@ -585,9 +585,6 @@ fn are_connected_horizontally(graph: &GraphData, mut a: NodeIndex, b: NodeIndex)
 
 fn center_in_alley(graph: &GraphData, node_a: &Node, a: &mut Point, node_b: &Node, b: &mut Point) {
     if node_a.position.x == node_b.position.x {
-        let min_y = node_a.position.y.min(node_b.position.y);
-        let max_y = node_a.position.y.max(node_b.position.y);
-
         let mut min_x = node_a.position.x;
         let mut max_x = node_a.position.x;
 
@@ -610,15 +607,6 @@ fn center_in_alley(graph: &GraphData, node_a: &Node, a: &mut Point, node_b: &Nod
             }
 
             if !are_connected_vertically(graph, next_a_index, next_b_index) {
-                break;
-            }
-
-            let alley_min = Point {
-                x: current_node_a.position.x,
-                y: min_y,
-            };
-            let alley_max = Point { x: max_x, y: max_y };
-            if graph.bounding_boxes.intersects_any(alley_min, alley_max) {
                 break;
             }
 
@@ -647,15 +635,6 @@ fn center_in_alley(graph: &GraphData, node_a: &Node, a: &mut Point, node_b: &Nod
                 break;
             }
 
-            let alley_min = Point { x: min_x, y: min_y };
-            let alley_max = Point {
-                x: current_node_a.position.x,
-                y: max_y,
-            };
-            if graph.bounding_boxes.intersects_any(alley_min, alley_max) {
-                break;
-            }
-
             max_x = current_node_a.position.x;
         }
 
@@ -664,9 +643,6 @@ fn center_in_alley(graph: &GraphData, node_a: &Node, a: &mut Point, node_b: &Nod
         b.x = center_x;
     } else {
         assert_eq!(node_a.position.y, node_b.position.y);
-
-        let min_x = node_a.position.x.min(node_b.position.x);
-        let max_x = node_a.position.x.max(node_b.position.x);
 
         let mut min_y = node_a.position.y;
         let mut max_y = node_a.position.y;
@@ -693,15 +669,6 @@ fn center_in_alley(graph: &GraphData, node_a: &Node, a: &mut Point, node_b: &Nod
                 break;
             }
 
-            let alley_min = Point {
-                x: min_x,
-                y: current_node_a.position.y,
-            };
-            let alley_max = Point { x: max_x, y: max_y };
-            if graph.bounding_boxes.intersects_any(alley_min, alley_max) {
-                break;
-            }
-
             min_y = current_node_a.position.y;
         }
 
@@ -724,15 +691,6 @@ fn center_in_alley(graph: &GraphData, node_a: &Node, a: &mut Point, node_b: &Nod
             }
 
             if !are_connected_horizontally(graph, next_a_index, next_b_index) {
-                break;
-            }
-
-            let alley_min = Point { x: min_x, y: min_y };
-            let alley_max = Point {
-                x: max_x,
-                y: current_node_a.position.y,
-            };
-            if graph.bounding_boxes.intersects_any(alley_min, alley_max) {
                 break;
             }
 

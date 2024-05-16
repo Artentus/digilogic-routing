@@ -494,17 +494,6 @@ impl BoundingBoxList {
 
         true
     }
-
-    /// Determines whether the given box intersects with any of the bounding boxes in the list.
-    pub(crate) fn intersects_any(&self, min: Point, max: Point) -> bool {
-        for bb in &self.bounding_boxes {
-            if bb.intersects_with(min, max) {
-                return true;
-            }
-        }
-
-        false
-    }
 }
 
 /// Finds the last (inclusive) x1 coordinate in the negative direction
@@ -1332,26 +1321,41 @@ impl GraphData {
 
         self.bounding_boxes.build(bounding_boxes);
 
+        let auto_anchors = bounding_boxes.iter().flat_map(|&bb| {
+            [
+                // corners
+                Anchor::new(bb.min_x() - 1, bb.min_y() - 1),
+                Anchor::new(bb.min_x() - 1, bb.max_y() + 1),
+                Anchor::new(bb.max_x() + 1, bb.min_y() - 1),
+                Anchor::new(bb.max_x() + 1, bb.max_y() + 1),
+                // centers
+                Anchor::new(bb.min_x() - 1, bb.center.y),
+                Anchor::new(bb.max_x() + 1, bb.center.y),
+                Anchor::new(bb.center.x, bb.min_y() - 1),
+                Anchor::new(bb.center.x, bb.max_y() + 1),
+            ]
+        });
+
+        let anchors = anchors.iter().copied().chain(auto_anchors);
+
         // Sort all X coordinates.
         self.x_coords.clear();
-        self.x_coords.reserve(anchors.len());
         self.x_coords
-            .extend(anchors.iter().map(|anchor| anchor.position.x));
+            .extend(anchors.clone().map(|anchor| anchor.position.x));
         self.x_coords.par_sort_unstable();
         self.x_coords.dedup();
 
         // Sort all Y coordinates.
         self.y_coords.clear();
-        self.y_coords.reserve(anchors.len());
         self.y_coords
-            .extend(anchors.iter().map(|anchor| anchor.position.y));
+            .extend(anchors.clone().map(|anchor| anchor.position.y));
         self.y_coords.par_sort_unstable();
         self.y_coords.dedup();
 
         self.node_map.clear();
         self.nodes.clear();
 
-        for anchor in anchors.iter().copied() {
+        for anchor in anchors.clone() {
             // Add graph node for this anchor point.
             match self.node_map.entry(anchor.position) {
                 Entry::Occupied(_) => (),
@@ -1364,7 +1368,7 @@ impl GraphData {
 
         if minimal {
             // Add dummy nodes for anchors inside bounding boxes.
-            for anchor in anchors.iter().copied() {
+            for anchor in anchors.clone() {
                 if anchor.bounding_box == BoundingBoxIndex::INVALID {
                     continue;
                 }
@@ -1373,7 +1377,7 @@ impl GraphData {
             }
         }
 
-        for anchor in anchors.iter().copied() {
+        for anchor in anchors {
             let anchor_index = self.node_map[&anchor.position];
             self.scan(anchor, anchor_index, minimal);
         }
