@@ -583,10 +583,7 @@ fn are_connected_horizontally(graph: &GraphData, mut a: NodeIndex, b: NodeIndex)
     false
 }
 
-fn center_in_alley(graph: &GraphData, a: &mut Point, b: &mut Point) {
-    let node_a = &graph.nodes[graph.find_node(*a).expect("invalid wire vertex")];
-    let node_b = &graph.nodes[graph.find_node(*b).expect("invalid wire vertex")];
-
+fn center_in_alley(graph: &GraphData, node_a: &Node, a: &mut Point, node_b: &Node, b: &mut Point) {
     if a.x == b.x {
         let mut min_x = a.x;
         let mut current_node_a = node_a;
@@ -716,32 +713,36 @@ fn push_vertices(
     let mut point_d = None;
 
     for point in path {
+        let node = &graph.nodes[graph.find_node(point).expect("invalid wire vertex")];
+
         let point_a = point_b;
         point_b = point_c;
         point_c = point_d;
-        point_d = Some(point);
+        point_d = Some((node, point));
 
-        if let Some(point_a) = point_a {
+        if let Some((_, point_a)) = point_a {
             push_vertex(vertices, point_a)?;
             path_len += 1;
 
-            if let Some((point_b, point_c)) = point_b.as_mut().zip(point_c.as_mut()) {
-                center_in_alley(graph, point_b, point_c);
+            if let Some(((node_b, point_b), (node_c, point_c))) =
+                point_b.as_mut().zip(point_c.as_mut())
+            {
+                center_in_alley(graph, node_b, point_b, node_c, point_c);
             }
         }
     }
 
-    if let Some(point_b) = point_b {
+    if let Some((_, point_b)) = point_b {
         push_vertex(vertices, point_b)?;
         path_len += 1;
     }
 
-    if let Some(point_c) = point_c {
+    if let Some((_, point_c)) = point_c {
         push_vertex(vertices, point_c)?;
         path_len += 1;
     }
 
-    if let Some(point_d) = point_d {
+    if let Some((_, point_d)) = point_d {
         push_vertex(vertices, point_d)?;
         path_len += 1;
     }
