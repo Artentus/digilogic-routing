@@ -253,6 +253,20 @@ impl BoundingBox {
             && (self.min_y() <= point.y)
             && (self.max_y() >= point.y)
     }
+
+    #[inline]
+    pub const fn intersects_with(self, min: Point, max: Point) -> bool {
+        assert!(min.x <= max.x);
+        assert!(min.y <= max.y);
+
+        let intersects_x = ((self.min_x() >= min.x) && (self.max_x() <= max.x))
+            || ((self.min_x() <= min.x) && (self.max_x() >= min.x))
+            || ((self.min_x() <= max.x) && (self.max_x() >= max.x));
+        let intersects_y = ((self.min_y() >= min.y) && (self.max_y() <= max.y))
+            || ((self.min_y() <= min.y) && (self.max_y() >= min.y))
+            || ((self.min_y() <= max.y) && (self.max_y() >= max.y));
+        intersects_x && intersects_y
+    }
 }
 
 /// cbindgen:field-names=[pos_x, neg_x, pos_y, neg_y]
@@ -424,18 +438,17 @@ impl BoundingBoxList {
     }
 
     /// Determines if two horizontally aligned points have a sightline to each other.
-    #[inline]
     fn points_have_horizontal_sightline(
         &self,
         y: i32,
         x1: i32,
         x2: i32,
-        ignore_box: Option<usize>,
+        ignore_box: BoundingBoxIndex,
     ) -> bool {
         assert!(x1 < x2);
 
         for (i, &bb) in self.bounding_boxes.iter().enumerate() {
-            if Some(i) == ignore_box {
+            if Some(i) == ignore_box.to_usize() {
                 continue;
             }
 
@@ -454,18 +467,17 @@ impl BoundingBoxList {
     }
 
     /// Determines if two vertically aligned points have a sightline to each other.
-    #[inline]
     fn points_have_vertical_sightline(
         &self,
         x: i32,
         y1: i32,
         y2: i32,
-        ignore_box: Option<usize>,
+        ignore_box: BoundingBoxIndex,
     ) -> bool {
         assert!(y1 < y2);
 
         for (i, &bb) in self.bounding_boxes.iter().enumerate() {
-            if Some(i) == ignore_box {
+            if Some(i) == ignore_box.to_usize() {
                 continue;
             }
 
@@ -482,6 +494,17 @@ impl BoundingBoxList {
 
         true
     }
+
+    /// Determines whether the given box intersects with any of the bounding boxes in the list.
+    pub(crate) fn intersects_any(&self, min: Point, max: Point) -> bool {
+        for bb in &self.bounding_boxes {
+            if bb.intersects_with(min, max) {
+                return true;
+            }
+        }
+
+        false
+    }
 }
 
 /// Finds the last (inclusive) x1 coordinate in the negative direction
@@ -492,7 +515,7 @@ fn find_neg_x_cutoff(
     x1_coords: &[i32],
     x2: i32,
     offset: usize,
-    ignore_box: Option<usize>,
+    ignore_box: BoundingBoxIndex,
 ) -> usize {
     if x1_coords.len() == 0 {
         return offset;
@@ -530,7 +553,7 @@ fn find_pos_x_cutoff(
     x1: i32,
     x2_coords: &[i32],
     offset: usize,
-    ignore_box: Option<usize>,
+    ignore_box: BoundingBoxIndex,
 ) -> usize {
     if x2_coords.len() == 0 {
         return offset;
@@ -568,7 +591,7 @@ fn find_neg_y_cutoff(
     y1_coords: &[i32],
     y2: i32,
     offset: usize,
-    ignore_box: Option<usize>,
+    ignore_box: BoundingBoxIndex,
 ) -> usize {
     if y1_coords.len() == 0 {
         return offset;
@@ -606,7 +629,7 @@ fn find_pos_y_cutoff(
     y1: i32,
     y2_coords: &[i32],
     offset: usize,
-    ignore_box: Option<usize>,
+    ignore_box: BoundingBoxIndex,
 ) -> usize {
     if y2_coords.len() == 0 {
         return offset;
@@ -650,7 +673,12 @@ fn include_point_horizontal(
 
     for y in y_coords[..y_index].iter().copied().rev() {
         if node_map.contains_key(&Point { x: point.x, y }) {
-            if bounding_boxes.points_have_vertical_sightline(point.x, y, point.y, None) {
+            if bounding_boxes.points_have_vertical_sightline(
+                point.x,
+                y,
+                point.y,
+                BoundingBoxIndex::INVALID,
+            ) {
                 return true;
             } else {
                 break;
@@ -660,7 +688,12 @@ fn include_point_horizontal(
 
     for y in y_coords[(y_index + 1)..].iter().copied() {
         if node_map.contains_key(&Point { x: point.x, y }) {
-            if bounding_boxes.points_have_vertical_sightline(point.x, point.y, y, None) {
+            if bounding_boxes.points_have_vertical_sightline(
+                point.x,
+                point.y,
+                y,
+                BoundingBoxIndex::INVALID,
+            ) {
                 return true;
             } else {
                 break;
@@ -685,7 +718,12 @@ fn include_point_vertical(
 
     for x in x_coords[..x_index].iter().copied().rev() {
         if node_map.contains_key(&Point { x, y: point.y }) {
-            if bounding_boxes.points_have_horizontal_sightline(point.y, x, point.x, None) {
+            if bounding_boxes.points_have_horizontal_sightline(
+                point.y,
+                x,
+                point.x,
+                BoundingBoxIndex::INVALID,
+            ) {
                 return true;
             } else {
                 break;
@@ -695,7 +733,12 @@ fn include_point_vertical(
 
     for x in x_coords[(x_index + 1)..].iter().copied() {
         if node_map.contains_key(&Point { x, y: point.y }) {
-            if bounding_boxes.points_have_horizontal_sightline(point.y, point.x, x, None) {
+            if bounding_boxes.points_have_horizontal_sightline(
+                point.y,
+                point.x,
+                x,
+                BoundingBoxIndex::INVALID,
+            ) {
                 return true;
             } else {
                 break;
@@ -725,7 +768,7 @@ fn node_index(
 
 #[derive(Default)]
 pub(crate) struct GraphData {
-    bounding_boxes: BoundingBoxList,
+    pub(crate) bounding_boxes: BoundingBoxList,
     x_coords: Vec<i32>,
     y_coords: Vec<i32>,
     node_map: HashMap<Point, NodeIndex>,
@@ -758,7 +801,7 @@ impl GraphData {
                 anchor.position.y,
                 x,
                 anchor.position.x,
-                anchor.bounding_box.to_usize(),
+                anchor.bounding_box,
             ) {
                 break;
             }
@@ -803,7 +846,7 @@ impl GraphData {
                 anchor.position.y,
                 anchor.position.x,
                 x,
-                anchor.bounding_box.to_usize(),
+                anchor.bounding_box,
             ) {
                 break;
             }
@@ -848,7 +891,7 @@ impl GraphData {
                 anchor.position.x,
                 y,
                 anchor.position.y,
-                anchor.bounding_box.to_usize(),
+                anchor.bounding_box,
             ) {
                 break;
             }
@@ -893,7 +936,7 @@ impl GraphData {
                 anchor.position.x,
                 anchor.position.y,
                 y,
-                anchor.bounding_box.to_usize(),
+                anchor.bounding_box,
             ) {
                 break;
             }
@@ -956,7 +999,7 @@ impl GraphData {
             &self.x_coords[..x_index],
             anchor.position.x,
             0,
-            anchor.bounding_box.to_usize(),
+            anchor.bounding_box,
         );
 
         let bounding_box = self.bounding_boxes.get(anchor.bounding_box);
@@ -1023,7 +1066,7 @@ impl GraphData {
             anchor.position.x,
             &self.x_coords[(x_index + 1)..],
             x_index + 1,
-            anchor.bounding_box.to_usize(),
+            anchor.bounding_box,
         );
 
         let bounding_box = self.bounding_boxes.get(anchor.bounding_box);
@@ -1090,7 +1133,7 @@ impl GraphData {
             &self.y_coords[..y_index],
             anchor.position.y,
             0,
-            anchor.bounding_box.to_usize(),
+            anchor.bounding_box,
         );
 
         let bounding_box = self.bounding_boxes.get(anchor.bounding_box);
@@ -1157,7 +1200,7 @@ impl GraphData {
             anchor.position.y,
             &self.y_coords[(y_index + 1)..],
             y_index + 1,
-            anchor.bounding_box.to_usize(),
+            anchor.bounding_box,
         );
 
         let bounding_box = self.bounding_boxes.get(anchor.bounding_box);
