@@ -202,6 +202,22 @@ impl Anchor {
             connect_directions: Directions::ALL,
         }
     }
+
+    #[inline]
+    pub const fn with_bounding_box(self, index: BoundingBoxIndex) -> Self {
+        Self {
+            bounding_box: index,
+            ..self
+        }
+    }
+
+    #[inline]
+    pub const fn with_connect_direction(self, directions: Directions) -> Self {
+        Self {
+            connect_directions: directions,
+            ..self
+        }
+    }
 }
 
 #[derive(Debug, Clone, Copy)]
@@ -1328,11 +1344,15 @@ impl GraphData {
                 Anchor::new(bb.min_x() - 1, bb.max_y() + 1),
                 Anchor::new(bb.max_x() + 1, bb.min_y() - 1),
                 Anchor::new(bb.max_x() + 1, bb.max_y() + 1),
-                // centers
-                Anchor::new(bb.min_x() - 1, bb.center.y),
-                Anchor::new(bb.max_x() + 1, bb.center.y),
-                Anchor::new(bb.center.x, bb.min_y() - 1),
-                Anchor::new(bb.center.x, bb.max_y() + 1),
+                // alley "blockers"
+                Anchor::new(bb.min_x() - 1, bb.min_y()).with_connect_direction(Directions::Y),
+                Anchor::new(bb.min_x() - 1, bb.max_y()).with_connect_direction(Directions::Y),
+                Anchor::new(bb.max_x() + 1, bb.min_y()).with_connect_direction(Directions::Y),
+                Anchor::new(bb.max_x() + 1, bb.max_y()).with_connect_direction(Directions::Y),
+                Anchor::new(bb.min_x(), bb.min_y() - 1).with_connect_direction(Directions::X),
+                Anchor::new(bb.max_x(), bb.min_y() - 1).with_connect_direction(Directions::X),
+                Anchor::new(bb.min_x(), bb.max_y() + 1).with_connect_direction(Directions::X),
+                Anchor::new(bb.max_x(), bb.max_y() + 1).with_connect_direction(Directions::X),
             ]
         });
 
