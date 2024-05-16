@@ -70,9 +70,13 @@ impl Path {
             .iter()
             .zip(&self.meta)
             .filter_map(move |(&point, &(kind, dir))| {
-                let include = match (dir, prev_dir) {
-                    (Some(dir), Some(prev_dir)) => dir != prev_dir,
-                    _ => true,
+                let include = if kind == PathNodeKind::Normal {
+                    match (dir, prev_dir) {
+                        (Some(dir), Some(prev_dir)) => dir != prev_dir,
+                        _ => true,
+                    }
+                } else {
+                    true
                 };
 
                 prev_dir = dir;
