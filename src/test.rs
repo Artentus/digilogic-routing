@@ -124,16 +124,14 @@ fn one_bend_impl(minimal: bool) {
 }
 
 fn two_bends_impl(minimal: bool) {
+    const BOUNDING_BOXES: &[BoundingBox] = &[BoundingBox {
+        center: Point { x: 2, y: 0 },
+        half_width: 1,
+        half_height: 1,
+    }];
+
     let mut graph = Graph::default();
-    graph.build(
-        ANCHORS,
-        &[BoundingBox {
-            center: Point { x: 2, y: 0 },
-            half_width: 1,
-            half_height: 1,
-        }],
-        minimal,
-    );
+    graph.build(ANCHORS, BOUNDING_BOXES, minimal);
 
     test_impl(
         &graph,
