@@ -125,6 +125,10 @@ typedef struct RT_Node {
      * The neighbors of the node.
      */
     struct RT_NeighborList neighbors;
+    /**
+     * Whether this node was created from an anchor.
+     */
+    bool is_anchor;
 } RT_Node;
 
 typedef struct RT_Slice_Node {
