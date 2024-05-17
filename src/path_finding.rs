@@ -192,10 +192,11 @@ impl PathFinder {
 
             let end_node = &graph.nodes[end_index];
             let neighbor_count = end_node.neighbor_count();
-            total_neighbor_count += neighbor_count;
-
+            
             if neighbor_count > 0 {
-                self.end_indices.insert(end_index);
+                if self.end_indices.insert(end_index) {
+                    total_neighbor_count += neighbor_count;
+                }
             }
         }
 
