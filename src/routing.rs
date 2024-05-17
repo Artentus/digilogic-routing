@@ -659,13 +659,13 @@ fn center_wires(
                                 }
                             }
                             Direction::PosY => {
-                                if junction_point.y == min_y {
-                                    vertices[junction_vertex].y += max_y as f32;
+                                if junction_point.y == max_y {
+                                    vertices[junction_vertex].y = min_y as f32;
                                 }
                             }
                             Direction::NegY => {
-                                if junction_point.y == max_y {
-                                    vertices[junction_vertex].y += min_y as f32;
+                                if junction_point.y == min_y {
+                                    vertices[junction_vertex].y = max_y as f32;
                                 }
                             }
                         }
@@ -685,13 +685,13 @@ fn center_wires(
                                 }
                             }
                             Direction::PosX => {
-                                if junction_point.x == min_x {
-                                    vertices[junction_vertex].x += max_x as f32;
+                                if junction_point.x == max_x {
+                                    vertices[junction_vertex].x = min_x as f32;
                                 }
                             }
                             Direction::NegX => {
-                                if junction_point.x == max_x {
-                                    vertices[junction_vertex].x += min_x as f32;
+                                if junction_point.x == min_x {
+                                    vertices[junction_vertex].x = max_x as f32;
                                 }
                             }
                         }
