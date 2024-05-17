@@ -125,11 +125,12 @@ fn push_vertices(
     graph: &GraphData,
     vertices: &mut Array<Vertex>,
     path: &Path,
-    ends: &mut HashMap<Point, Vertex>,
+    ends: &mut Vec<Point>,
     centering_candidates: &mut Vec<CenteringCandidate>,
 ) -> Result<u16, ()> {
+    ends.reserve(path.nodes().len());
     for node in path.nodes() {
-        ends.insert(node.position, node.position.into());
+        ends.push(node.position);
     }
 
     let mut path_len = 0usize;
@@ -169,14 +170,13 @@ fn push_vertices(
 fn push_fallback_vertices(
     points: impl IntoIterator<Item = Point>,
     vertices: &mut Array<Vertex>,
-    ends: &mut HashMap<Point, Vertex>,
+    ends: &mut Vec<Point>,
 ) -> Result<u16, ()> {
     let mut path_len = 0usize;
 
     for point in points {
-        let vertex = point.into();
-        vertices.push(vertex)?;
-        ends.insert(point, vertex);
+        vertices.push(point.into())?;
+        ends.push(point);
         path_len += 1;
     }
 
@@ -199,7 +199,7 @@ fn route_root_wire<I>(
     root_end: Point,
     vertices: &mut Array<Vertex>,
     wire_views: &mut Array<WireView>,
-    ends: &mut HashMap<Point, Vertex>,
+    ends: &mut Vec<Point>,
     centering_candidates: &mut Vec<CenteringCandidate>,
 ) -> Result<u32, RoutingError>
 where
@@ -264,7 +264,7 @@ fn route_branch_wires<I>(
     root_end: Point,
     vertices: &mut Array<Vertex>,
     wire_views: &mut Array<WireView>,
-    ends: &mut HashMap<Point, Vertex>,
+    ends: &mut Vec<Point>,
     centering_candidates: &mut Vec<CenteringCandidate>,
 ) -> Result<u32, RoutingError>
 where
@@ -275,7 +275,7 @@ where
     for endpoint in endpoints {
         if (endpoint != root_start) && (endpoint != root_end) {
             let path_len =
-                match path_finder.find_path(graph, endpoint, None, ends.keys().copied(), false) {
+                match path_finder.find_path(graph, endpoint, None, ends.iter().copied(), false) {
                     PathFindResult::Found(path) => {
                         push_vertices(graph, vertices, path, ends, centering_candidates)
                             .map_err(|_| RoutingError::VertexBufferOverflow)?
@@ -539,6 +539,10 @@ fn center_wires(
     centering_candidates: &[CenteringCandidate],
     graph: &GraphData,
     vertices: &mut Array<Vertex>,
+    vertex_offset: usize,
+    wire_views: &Array<WireView>,
+    wire_offset: usize,
+    wire_count: usize,
 ) {
     for centering_candidate in centering_candidates {
         let node_a = &graph.nodes[centering_candidate.node_a];
@@ -551,6 +555,40 @@ fn center_wires(
         };
 
         let offset = center_in_alley(graph, node_a, vertex_a, node_b, vertex_b);
+
+        let mut vertex_index = vertex_offset;
+        for wire in &wire_views[wire_offset..(wire_offset + wire_count)] {
+            let joint = &mut vertices[vertex_index + (wire.vertex_count as usize) - 1];
+
+            match offset {
+                NudgeOffset::Horizontal(offset) => {
+                    assert_eq!(node_a.position.x, node_b.position.x);
+
+                    if (joint.x as i32) == node_a.position.x {
+                        let min_y = node_a.position.y.min(node_b.position.y);
+                        let max_y = node_a.position.y.max(node_b.position.y);
+
+                        if ((joint.y as i32) >= min_y) && ((joint.y as i32) <= max_y) {
+                            joint.x += offset;
+                        }
+                    }
+                }
+                NudgeOffset::Vertical(offset) => {
+                    assert_eq!(node_a.position.y, node_b.position.y);
+
+                    if (joint.y as i32) == node_a.position.y {
+                        let min_x = node_a.position.x.min(node_b.position.x);
+                        let max_x = node_a.position.x.max(node_b.position.x);
+
+                        if ((joint.x as i32) >= min_x) && ((joint.x as i32) <= max_x) {
+                            joint.y += offset;
+                        }
+                    }
+                }
+            }
+
+            vertex_index += wire.vertex_count as usize;
+        }
     }
 }
 
@@ -563,7 +601,7 @@ pub(crate) fn connect_net<EndpointList, WaypointList>(
     vertices: &mut Array<Vertex>,
     wire_views: &mut Array<WireView>,
     net_view: &mut MaybeUninit<NetView>,
-    ends: &mut HashMap<Point, Vertex>,
+    ends: &mut Vec<Point>,
 ) -> Result<(), RoutingError>
 where
     EndpointList: Clone + IntoIterator<Item = Point>,
@@ -609,13 +647,22 @@ where
         &mut centering_candidates,
     )?;
 
-    center_wires(&centering_candidates, &graph.data, vertices);
-
-    net_view.write(NetView {
+    let net = NetView {
         wire_offset,
         wire_count: root_wire_count + branch_wire_count,
         vertex_offset,
-    });
+    };
 
+    center_wires(
+        &centering_candidates,
+        &graph.data,
+        vertices,
+        (net.vertex_offset as usize) - vertex_base_offset,
+        wire_views,
+        (net.wire_offset as usize) - wire_base_offset,
+        net.wire_count as usize,
+    );
+
+    net_view.write(net);
     Ok(())
 }

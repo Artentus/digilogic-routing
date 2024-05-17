@@ -79,7 +79,7 @@ impl Graph {
         vertices: &mut [MaybeUninit<Vertex>],
         wire_views: &mut [MaybeUninit<WireView>],
     ) -> Result<NetView, RoutingError> {
-        let mut ends = HashMap::default();
+        let mut ends = Vec::new();
         let mut net_view = MaybeUninit::uninit();
 
         routing::connect_net(
