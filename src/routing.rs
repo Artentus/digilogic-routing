@@ -378,7 +378,22 @@ fn push_vertices(
     }
 
     if let Some((_, prev_path_node, _)) = prev {
-        vertices.push(ends[&prev_path_node.position].into())?;
+        let original = prev_path_node.position;
+        let nudged = ends[&original];
+
+        let actual = match prev_prev_dir {
+            Some(Some(Direction::NegX)) | Some(Some(Direction::PosX)) => Point {
+                x: nudged.x,
+                y: original.y,
+            },
+            Some(Some(Direction::NegY)) | Some(Some(Direction::PosY)) => Point {
+                x: original.x,
+                y: nudged.y,
+            },
+            _ => nudged,
+        };
+
+        vertices.push(actual.into())?;
         path_len += 1;
     }
 
