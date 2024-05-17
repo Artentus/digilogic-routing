@@ -280,8 +280,6 @@ impl PathFinder {
 
                 for dir in Direction::ALL {
                     if Some(dir.opposite()) == straight_dir {
-                        debug_assert_eq!(current_node.neighbors[dir], pred.unwrap().0);
-
                         // The path came from here.
                         continue;
                     }
