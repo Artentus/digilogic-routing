@@ -510,7 +510,7 @@ pub unsafe extern "C" fn RT_graph_connect_nets(
     struct MutableThreadlocalData {
         vertices: Array<'static, Vertex>,
         wire_views: Array<'static, WireView>,
-        ends: Vec<Point>,
+        ends: HashMap<Point, Point>,
     }
 
     struct ThreadlocalData {
@@ -548,7 +548,7 @@ pub unsafe extern "C" fn RT_graph_connect_nets(
                     mutable: RefCell::new(MutableThreadlocalData {
                         vertices,
                         wire_views,
-                        ends: Vec::new(),
+                        ends: HashMap::default(),
                     }),
                     vertex_base_offset: vertices_start,
                     wire_base_offset: wire_views_start,

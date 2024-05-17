@@ -167,7 +167,19 @@ fn are_connected_horizontally(graph: &GraphData, mut a: NodeIndex, b: NodeIndex)
     ConnectionKind::Unconnected
 }
 
-fn center_in_alley(graph: &GraphData, node_a: &Node, a: &mut Point, node_b: &Node, b: &mut Point) {
+#[derive(Debug, Clone, Copy)]
+enum NudgeOffset {
+    Horizontal(i32),
+    Vertical(i32),
+}
+
+fn center_in_alley(
+    graph: &GraphData,
+    node_a: &Node,
+    a: &mut Point,
+    node_b: &Node,
+    b: &mut Point,
+) -> NudgeOffset {
     if node_a.position.x == node_b.position.x {
         let mut min_x = node_a.position.x;
         let mut max_x = node_a.position.x;
@@ -237,6 +249,8 @@ fn center_in_alley(graph: &GraphData, node_a: &Node, a: &mut Point, node_b: &Nod
         let center_x = (min_x + max_x) / 2;
         a.x = center_x;
         b.x = center_x;
+
+        NudgeOffset::Horizontal(center_x - node_a.position.x)
     } else {
         assert_eq!(node_a.position.y, node_b.position.y);
 
@@ -308,43 +322,63 @@ fn center_in_alley(graph: &GraphData, node_a: &Node, a: &mut Point, node_b: &Nod
         let center_y = (min_y + max_y) / 2;
         a.y = center_y;
         b.y = center_y;
+
+        NudgeOffset::Vertical(center_y - node_a.position.y)
     }
 }
 
-fn push_vertices(graph: &GraphData, vertices: &mut Array<Vertex>, path: &Path) -> Result<u16, ()> {
+fn push_vertices(
+    graph: &GraphData,
+    vertices: &mut Array<Vertex>,
+    path: &Path,
+    ends: &mut HashMap<Point, Point>,
+) -> Result<u16, ()> {
     let mut path_len = 0usize;
 
     let mut prev_prev_dir = None;
-    let mut prev: Option<(PathNode, &Node)> = None;
+    let mut prev: Option<(usize, PathNode, &Node)> = None;
     for (path_node_index, mut path_node) in path.iter_pruned() {
         let node = &graph.nodes[graph
             .find_node(path_node.position)
             .expect("invalid wire vertex")];
 
-        if let Some((mut prev_path_node, prev_node)) = prev {
-            if (prev_path_node.kind == PathNodeKind::Normal)
+        if let Some((prev_path_node_index, mut prev_path_node, prev_node)) = prev {
+            let nudge_offset = if (prev_path_node.kind == PathNodeKind::Normal)
                 && (path_node.kind == PathNodeKind::Normal)
                 && (prev_prev_dir != Some(path_node.bend_direction.map(Direction::opposite)))
             {
-                center_in_alley(
+                Some(center_in_alley(
                     graph,
                     prev_node,
                     &mut prev_path_node.position,
                     node,
                     &mut path_node.position,
-                );
+                ))
+            } else {
+                None
+            };
+
+            for &PathNode { position, .. } in &path.nodes()[prev_path_node_index..=path_node_index]
+            {
+                let nudged = ends.entry(position).or_insert(position);
+
+                match nudge_offset {
+                    None => (),
+                    Some(NudgeOffset::Horizontal(offset)) => nudged.x += offset,
+                    Some(NudgeOffset::Vertical(offset)) => nudged.y += offset,
+                }
             }
 
             vertices.push(prev_path_node.position.into())?;
             path_len += 1;
         }
 
-        prev_prev_dir = prev.map(|(prev_path_node, _)| prev_path_node.bend_direction);
-        prev = Some((path_node, node));
+        prev_prev_dir = prev.map(|(_, prev_path_node, _)| prev_path_node.bend_direction);
+        prev = Some((path_node_index, path_node, node));
     }
 
-    if let Some((prev_path_node, _)) = prev {
-        vertices.push(prev_path_node.position.into())?;
+    if let Some((_, prev_path_node, _)) = prev {
+        vertices.push(ends[&prev_path_node.position].into())?;
         path_len += 1;
     }
 
@@ -359,6 +393,19 @@ pub enum RoutingError {
     InvalidPoint,
 }
 
+fn extend_ends(points: impl IntoIterator<Item = Point>, ends: &mut HashMap<Point, Point>) {
+    use std::collections::hash_map::Entry;
+
+    for point in points {
+        match ends.entry(point) {
+            Entry::Occupied(_) => (),
+            Entry::Vacant(entry) => {
+                entry.insert(point);
+            }
+        }
+    }
+}
+
 fn route_root_wire<I>(
     graph: &GraphData,
     path_finder: &mut PathFinder,
@@ -367,7 +414,7 @@ fn route_root_wire<I>(
     root_end: Point,
     vertices: &mut Array<Vertex>,
     wire_views: &mut Array<WireView>,
-    ends: &mut Vec<Point>,
+    ends: &mut HashMap<Point, Point>,
 ) -> Result<u32, RoutingError>
 where
     I: IntoIterator<Item = Point>,
@@ -379,11 +426,13 @@ where
         true,
     ) {
         PathFindResult::Found(path) => {
-            ends.extend(path.nodes().iter().map(|path_node| path_node.position));
-            push_vertices(graph, vertices, path).map_err(|_| RoutingError::VertexBufferOverflow)?
+            //let path_points = path.nodes().iter().map(|path_node| path_node.position);
+            //extend_ends(path_points, ends);
+            push_vertices(graph, vertices, path, ends)
+                .map_err(|_| RoutingError::VertexBufferOverflow)?
         }
         PathFindResult::NotFound => {
-            ends.extend_from_slice(&[root_start, root_end]);
+            extend_ends([root_start, root_end], ends);
             vertices
                 .push(root_start.into())
                 .map_err(|_| RoutingError::VertexBufferOverflow)?;
@@ -414,7 +463,7 @@ fn route_branch_wires<I>(
     root_end: Point,
     vertices: &mut Array<Vertex>,
     wire_views: &mut Array<WireView>,
-    ends: &mut Vec<Point>,
+    ends: &mut HashMap<Point, Point>,
 ) -> Result<u32, RoutingError>
 where
     I: IntoIterator<Item = Point>,
@@ -423,15 +472,16 @@ where
 
     for endpoint in endpoints {
         if (endpoint != root_start) && (endpoint != root_end) {
-            let path_len = match path_finder.find_path(graph, endpoint, ends.iter().copied(), false)
+            let path_len = match path_finder.find_path(graph, endpoint, ends.keys().copied(), false)
             {
                 PathFindResult::Found(path) => {
-                    ends.extend(path.nodes().iter().map(|path_node| path_node.position));
-                    push_vertices(graph, vertices, path)
+                    //let path_points = path.nodes().iter().map(|path_node| path_node.position);
+                    //extend_ends(path_points, ends);
+                    push_vertices(graph, vertices, path, ends)
                         .map_err(|_| RoutingError::VertexBufferOverflow)?
                 }
                 PathFindResult::NotFound => {
-                    ends.extend_from_slice(&[endpoint, root_start]);
+                    extend_ends([endpoint, root_start], ends);
                     vertices
                         .push(endpoint.into())
                         .map_err(|_| RoutingError::VertexBufferOverflow)?;
@@ -467,7 +517,7 @@ pub(crate) fn connect_net<EndpointList, WaypointList>(
     vertices: &mut Array<Vertex>,
     wire_views: &mut Array<WireView>,
     net_view: &mut MaybeUninit<NetView>,
-    ends: &mut Vec<Point>,
+    ends: &mut HashMap<Point, Point>,
 ) -> Result<(), RoutingError>
 where
     EndpointList: Clone + IntoIterator<Item = Point>,
