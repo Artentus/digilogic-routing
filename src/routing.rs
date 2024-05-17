@@ -118,7 +118,7 @@ where
 struct CenteringCandidate {
     node_a: NodeIndex,
     node_b: NodeIndex,
-    vertex_offset: u32,
+    vertex_index: u32,
 }
 
 fn push_vertices(
@@ -147,7 +147,7 @@ fn push_vertices(
                         .find_node(prev_node.position)
                         .expect("invalid path node"),
                     node_b: graph.find_node(node.position).expect("invalid path node"),
-                    vertex_offset: vertices.len as u32,
+                    vertex_index: vertices.len as u32,
                 });
             }
 
@@ -266,6 +266,7 @@ fn route_branch_wires<I>(
     wire_views: &mut Array<WireView>,
     ends: &mut Vec<Point>,
     centering_candidates: &mut Vec<CenteringCandidate>,
+    junctions: &mut HashMap<Point, usize>,
 ) -> Result<u32, RoutingError>
 where
     I: IntoIterator<Item = Point>,
@@ -277,8 +278,13 @@ where
             let path_len =
                 match path_finder.find_path(graph, endpoint, None, ends.iter().copied(), false) {
                     PathFindResult::Found(path) => {
-                        push_vertices(graph, vertices, path, ends, centering_candidates)
-                            .map_err(|_| RoutingError::VertexBufferOverflow)?
+                        let path_len =
+                            push_vertices(graph, vertices, path, ends, centering_candidates)
+                                .map_err(|_| RoutingError::VertexBufferOverflow)?;
+
+                        junctions.insert(path.nodes().last().unwrap().position, vertices.len - 1);
+
+                        path_len
                     }
                     PathFindResult::NotFound => {
                         push_fallback_vertices([endpoint, root_start], vertices, ends)
@@ -309,7 +315,12 @@ enum ConnectionKind {
     Unconnected,
 }
 
-fn are_connected_vertically(graph: &GraphData, mut a: NodeIndex, b: NodeIndex) -> ConnectionKind {
+fn are_connected_vertically(
+    graph: &GraphData,
+    mut a: NodeIndex,
+    b: NodeIndex,
+    junctions: &HashMap<Point, usize>,
+) -> ConnectionKind {
     let node_a = &graph.nodes[a];
     let node_b = &graph.nodes[b];
 
@@ -332,7 +343,7 @@ fn are_connected_vertically(graph: &GraphData, mut a: NodeIndex, b: NodeIndex) -
         }
 
         let node = &graph.nodes[a];
-        if node.is_anchor {
+        if node.is_anchor || junctions.contains_key(&node.position) {
             through_anchor = true;
         }
 
@@ -342,7 +353,12 @@ fn are_connected_vertically(graph: &GraphData, mut a: NodeIndex, b: NodeIndex) -
     ConnectionKind::Unconnected
 }
 
-fn are_connected_horizontally(graph: &GraphData, mut a: NodeIndex, b: NodeIndex) -> ConnectionKind {
+fn are_connected_horizontally(
+    graph: &GraphData,
+    mut a: NodeIndex,
+    b: NodeIndex,
+    junctions: &HashMap<Point, usize>,
+) -> ConnectionKind {
     let node_a = &graph.nodes[a];
     let node_b = &graph.nodes[b];
 
@@ -365,7 +381,7 @@ fn are_connected_horizontally(graph: &GraphData, mut a: NodeIndex, b: NodeIndex)
         }
 
         let node = &graph.nodes[a];
-        if node.is_anchor {
+        if node.is_anchor || junctions.contains_key(&node.position) {
             through_anchor = true;
         }
 
@@ -384,9 +400,10 @@ enum NudgeOffset {
 fn center_in_alley(
     graph: &GraphData,
     node_a: &Node,
-    vertex_a: &mut Vertex,
     node_b: &Node,
-    vertex_b: &mut Vertex,
+    vertex_index: usize,
+    vertices: &mut Array<Vertex>,
+    junctions: &HashMap<Point, usize>,
 ) -> NudgeOffset {
     if node_a.position.x == node_b.position.x {
         let mut min_x = node_a.position.x;
@@ -410,7 +427,7 @@ fn center_in_alley(
                 break;
             }
 
-            match are_connected_vertically(graph, next_a_index, next_b_index) {
+            match are_connected_vertically(graph, next_a_index, next_b_index, junctions) {
                 ConnectionKind::Connected => {
                     min_x = current_node_a.position.x;
                     continue;
@@ -441,7 +458,7 @@ fn center_in_alley(
                 break;
             }
 
-            match are_connected_vertically(graph, next_a_index, next_b_index) {
+            match are_connected_vertically(graph, next_a_index, next_b_index, junctions) {
                 ConnectionKind::Connected => {
                     max_x = current_node_a.position.x;
                     continue;
@@ -453,6 +470,12 @@ fn center_in_alley(
                 ConnectionKind::Unconnected => break,
             }
         }
+
+        let vertex_start = vertex_index;
+        let vertex_end = vertex_start + 1;
+        let [vertex_a, vertex_b] = &mut vertices[vertex_start..=vertex_end] else {
+            panic!("invalid vertex offset");
+        };
 
         let center_x = (min_x + max_x) as f32 / 2.0;
         vertex_a.x = center_x;
@@ -483,7 +506,7 @@ fn center_in_alley(
                 break;
             }
 
-            match are_connected_horizontally(graph, next_a_index, next_b_index) {
+            match are_connected_horizontally(graph, next_a_index, next_b_index, junctions) {
                 ConnectionKind::Connected => {
                     min_y = current_node_a.position.y;
                     continue;
@@ -514,7 +537,7 @@ fn center_in_alley(
                 break;
             }
 
-            match are_connected_horizontally(graph, next_a_index, next_b_index) {
+            match are_connected_horizontally(graph, next_a_index, next_b_index, junctions) {
                 ConnectionKind::Connected => {
                     max_y = current_node_a.position.y;
                     continue;
@@ -526,6 +549,12 @@ fn center_in_alley(
                 ConnectionKind::Unconnected => break,
             }
         }
+
+        let vertex_start = vertex_index;
+        let vertex_end = vertex_start + 1;
+        let [vertex_a, vertex_b] = &mut vertices[vertex_start..=vertex_end] else {
+            panic!("invalid vertex offset");
+        };
 
         let center_y = ((min_y + max_y) as f32) / 2.0;
         vertex_a.y = center_y;
@@ -539,55 +568,48 @@ fn center_wires(
     centering_candidates: &[CenteringCandidate],
     graph: &GraphData,
     vertices: &mut Array<Vertex>,
-    vertex_offset: usize,
-    wire_views: &Array<WireView>,
-    wire_offset: usize,
-    wire_count: usize,
+    junctions: &HashMap<Point, usize>,
 ) {
     for centering_candidate in centering_candidates {
         let node_a = &graph.nodes[centering_candidate.node_a];
         let node_b = &graph.nodes[centering_candidate.node_b];
 
-        let vertex_start = centering_candidate.vertex_offset as usize;
-        let vertex_end = vertex_start + 1;
-        let [vertex_a, vertex_b] = &mut vertices[vertex_start..=vertex_end] else {
-            panic!("invalid vertex offset");
-        };
+        let offset = center_in_alley(
+            graph,
+            node_a,
+            node_b,
+            centering_candidate.vertex_index as usize,
+            vertices,
+            junctions,
+        );
 
-        let offset = center_in_alley(graph, node_a, vertex_a, node_b, vertex_b);
-
-        let mut vertex_index = vertex_offset;
-        for wire in &wire_views[wire_offset..(wire_offset + wire_count)] {
-            let joint = &mut vertices[vertex_index + (wire.vertex_count as usize) - 1];
-
+        for (&junction_point, &junction_vertex) in junctions {
             match offset {
                 NudgeOffset::Horizontal(offset) => {
                     assert_eq!(node_a.position.x, node_b.position.x);
 
-                    if (joint.x as i32) == node_a.position.x {
+                    if junction_point.x == node_a.position.x {
                         let min_y = node_a.position.y.min(node_b.position.y);
                         let max_y = node_a.position.y.max(node_b.position.y);
 
-                        if ((joint.y as i32) >= min_y) && ((joint.y as i32) <= max_y) {
-                            joint.x += offset;
+                        if (junction_point.y >= min_y) && (junction_point.y <= max_y) {
+                            vertices[junction_vertex].x += offset;
                         }
                     }
                 }
                 NudgeOffset::Vertical(offset) => {
                     assert_eq!(node_a.position.y, node_b.position.y);
 
-                    if (joint.y as i32) == node_a.position.y {
+                    if junction_point.y == node_a.position.y {
                         let min_x = node_a.position.x.min(node_b.position.x);
                         let max_x = node_a.position.x.max(node_b.position.x);
 
-                        if ((joint.x as i32) >= min_x) && ((joint.x as i32) <= max_x) {
-                            joint.y += offset;
+                        if (junction_point.x >= min_x) && (junction_point.x <= max_x) {
+                            vertices[junction_vertex].y += offset;
                         }
                     }
                 }
             }
-
-            vertex_index += wire.vertex_count as usize;
         }
     }
 }
@@ -622,6 +644,7 @@ where
         .expect("too many vertices");
 
     let mut centering_candidates = Vec::new();
+    let mut junctions = HashMap::default();
 
     let root_wire_count = route_root_wire(
         &graph.data,
@@ -645,24 +668,16 @@ where
         wire_views,
         ends,
         &mut centering_candidates,
+        &mut junctions,
     )?;
 
-    let net = NetView {
+    center_wires(&centering_candidates, &graph.data, vertices, &junctions);
+
+    net_view.write(NetView {
         wire_offset,
         wire_count: root_wire_count + branch_wire_count,
         vertex_offset,
-    };
+    });
 
-    center_wires(
-        &centering_candidates,
-        &graph.data,
-        vertices,
-        (net.vertex_offset as usize) - vertex_base_offset,
-        wire_views,
-        (net.wire_offset as usize) - wire_base_offset,
-        net.wire_count as usize,
-    );
-
-    net_view.write(net);
     Ok(())
 }
