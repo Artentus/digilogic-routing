@@ -510,7 +510,7 @@ pub unsafe extern "C" fn RT_graph_connect_nets(
     struct MutableThreadlocalData {
         vertices: Array<'static, Vertex>,
         wire_views: Array<'static, WireView>,
-        ends: HashMap<Point, Point>,
+        ends: HashMap<Point, Vertex>,
     }
 
     struct ThreadlocalData {
