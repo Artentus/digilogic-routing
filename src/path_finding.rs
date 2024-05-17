@@ -116,7 +116,7 @@ impl PathFinder {
     #[cfg(not(debug_assertions))]
     fn assert_data_is_valid(&self, _graph: &GraphData) {}
 
-    fn build_path(&mut self, graph: &GraphData, end_index: NodeIndex) {
+    fn build_path(&mut self, graph: &GraphData, start_index: NodeIndex, end_index: NodeIndex) {
         // If there was a previous path segment, don't duplicate the joining point.
         if self.path.nodes.len() > 0 {
             let prev_end = self.path.nodes.pop();
@@ -141,8 +141,8 @@ impl PathFinder {
         });
 
         let mut current_index = end_index;
-        // The final node in the path has no predecessor.
-        while let Some(&pred_index) = self.predecessor.get(&current_index) {
+        loop {
+            let pred_index = *self.predecessor.get(&current_index).expect("invalid path");
             let pred = &graph.nodes[pred_index];
 
             let dir = pred
@@ -150,23 +150,36 @@ impl PathFinder {
                 .find(current_index)
                 .expect("invalid predecessor");
 
-            self.path.nodes.insert(
-                insert_index,
-                PathNode {
-                    position: pred.position,
-                    kind: PathNodeKind::Normal,
-                    bend_direction: Some(dir),
-                },
-            );
+            if pred_index == start_index {
+                let kind = if insert_index == 0 {
+                    PathNodeKind::Start
+                } else {
+                    PathNodeKind::Waypoint
+                };
 
-            current_index = pred_index;
+                self.path.nodes.insert(
+                    insert_index,
+                    PathNode {
+                        position: pred.position,
+                        kind,
+                        bend_direction: Some(dir),
+                    },
+                );
+
+                break;
+            } else {
+                self.path.nodes.insert(
+                    insert_index,
+                    PathNode {
+                        position: pred.position,
+                        kind: PathNodeKind::Normal,
+                        bend_direction: Some(dir),
+                    },
+                );
+
+                current_index = pred_index;
+            }
         }
-
-        self.path.nodes[insert_index].kind = if insert_index == 0 {
-            PathNodeKind::Start
-        } else {
-            PathNodeKind::Waypoint
-        };
     }
 
     /// A* path finding.
@@ -192,7 +205,7 @@ impl PathFinder {
 
             let end_node = &graph.nodes[end_index];
             let neighbor_count = end_node.neighbor_count();
-            
+
             if neighbor_count > 0 {
                 if self.end_indices.insert(end_index) {
                     total_neighbor_count += neighbor_count;
@@ -200,30 +213,54 @@ impl PathFinder {
             }
         }
 
-        let mut straight_dir = None;
+        self.g_score.clear();
+        self.predecessor.clear();
+        self.open_queue.clear();
+
+        self.g_score.insert(start_index, 0);
+        self.open_queue.push(start_index, Reverse(0));
+
         'outer: loop {
             if total_neighbor_count == 0 {
                 // There cannot possibly be a path, abort.
                 break 'outer;
             }
 
-            self.g_score.clear();
-            self.predecessor.clear();
-            self.open_queue.clear();
-
-            self.g_score.insert(start_index, 0);
-            self.open_queue.push(start_index, Reverse(0));
-
             while let Some((current_index, _)) = self.open_queue.pop() {
                 let current_node = &graph.nodes[current_index];
 
-                let pred = self
-                    .predecessor
-                    .get(&current_index)
-                    .map(|&pred_index| (pred_index, &graph.nodes[pred_index]));
+                let pred_index = self.predecessor.get(&current_index).copied();
+
+                // Shortest path to one end found, construct it.
+                if self.end_indices.contains(&current_index) {
+                    self.assert_data_is_valid(graph);
+                    self.build_path(graph, start_index, current_index);
+
+                    if visit_all {
+                        self.end_indices.remove(&current_index);
+                        total_neighbor_count -= current_node.neighbor_count();
+                        start_index = current_index;
+
+                        self.g_score.clear();
+                        self.predecessor.clear();
+                        self.open_queue.clear();
+
+                        self.g_score.insert(start_index, 0);
+                        self.open_queue.push(start_index, Reverse(0));
+                        if let Some(pred_index) = pred_index {
+                            self.predecessor.insert(start_index, pred_index);
+                        }
+
+                        continue 'outer;
+                    } else {
+                        break 'outer;
+                    }
+                }
+
+                let pred = pred_index.map(|pred_index| (pred_index, &graph.nodes[pred_index]));
 
                 // Find which direction is straight ahead to apply weights.
-                if let Some((pred_index, pred_node)) = pred {
+                let straight_dir = pred.map(|(pred_index, pred_node)| {
                     let pred_to_current_dir = pred_node
                         .neighbors
                         .find(current_index)
@@ -232,27 +269,13 @@ impl PathFinder {
                     let current_to_pred_dir = current_node.neighbors.find(pred_index);
                     debug_assert_eq!(current_to_pred_dir, Some(pred_to_current_dir.opposite()));
 
-                    straight_dir = Some(pred_to_current_dir);
-                }
-
-                // Shortest path to one end found, construct it.
-                if self.end_indices.contains(&current_index) {
-                    self.assert_data_is_valid(graph);
-                    self.build_path(graph, current_index);
-
-                    if visit_all {
-                        self.end_indices.remove(&current_index);
-                        total_neighbor_count -= current_node.neighbor_count();
-                        start_index = current_index;
-
-                        continue 'outer;
-                    } else {
-                        break 'outer;
-                    }
-                }
+                    pred_to_current_dir
+                });
 
                 for dir in Direction::ALL {
                     if Some(dir.opposite()) == straight_dir {
+                        debug_assert_eq!(current_node.neighbors[dir], pred.unwrap().0);
+
                         // The path came from here.
                         continue;
                     }
