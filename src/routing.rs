@@ -331,7 +331,11 @@ fn are_connected_vertically(
         Direction::NegY
     };
 
-    let mut through_anchor = node_a.is_anchor || node_b.is_anchor;
+    let mut through_anchor = node_a.is_anchor
+        || node_b.is_anchor
+        || junctions.contains_key(&node_a.position)
+        || junctions.contains_key(&node_b.position);
+
     a = node_a.neighbors[dir];
     while a != INVALID_NODE_INDEX {
         if a == b {
@@ -369,7 +373,11 @@ fn are_connected_horizontally(
         Direction::NegX
     };
 
-    let mut through_anchor = node_a.is_anchor || node_b.is_anchor;
+    let mut through_anchor = node_a.is_anchor
+        || node_b.is_anchor
+        || junctions.contains_key(&node_a.position)
+        || junctions.contains_key(&node_b.position);
+
     a = node_a.neighbors[dir];
     while a != INVALID_NODE_INDEX {
         if a == b {
