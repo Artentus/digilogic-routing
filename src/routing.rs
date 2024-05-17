@@ -128,8 +128,11 @@ fn push_vertices(
     ends: &mut HashMap<Point, Vertex>,
     centering_candidates: &mut Vec<CenteringCandidate>,
 ) -> Result<u16, ()> {
-    let mut path_len = 0usize;
+    for node in path.nodes() {
+        ends.insert(node.position, node.position.into());
+    }
 
+    let mut path_len = 0usize;
     let mut prev_prev_dir = None;
     let mut prev_node: Option<PathNode> = None;
     for (_, node) in path.iter_pruned() {
@@ -147,9 +150,7 @@ fn push_vertices(
                 });
             }
 
-            let vertex = prev_node.position.into();
-            ends.insert(node.position, vertex);
-            vertices.push(vertex)?;
+            vertices.push(prev_node.position.into())?;
             path_len += 1;
         }
 
