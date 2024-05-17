@@ -115,7 +115,7 @@ where
     }
 }
 
-struct CenteringCandidate {
+pub(crate) struct CenteringCandidate {
     node_a: NodeIndex,
     node_b: NodeIndex,
     vertex_index: u32,
@@ -720,6 +720,8 @@ pub(crate) fn connect_net<EndpointList, WaypointList>(
     wire_views: &mut Array<WireView>,
     net_view: &mut MaybeUninit<NetView>,
     ends: &mut Vec<Point>,
+    centering_candidates: &mut Vec<CenteringCandidate>,
+    junctions: &mut HashMap<Point, (usize, Direction)>,
 ) -> Result<(), RoutingError>
 where
     EndpointList: Clone + IntoIterator<Item = Point>,
@@ -731,6 +733,8 @@ where
         pick_root_path(endpoints.clone()).map_err(|_| RoutingError::NotEnoughEndpoints)?;
 
     ends.clear();
+    centering_candidates.clear();
+    junctions.clear();
 
     let wire_offset = (wire_base_offset + wire_views.len)
         .try_into()
@@ -738,9 +742,6 @@ where
     let vertex_offset = (vertex_base_offset + vertices.len)
         .try_into()
         .expect("too many vertices");
-
-    let mut centering_candidates = Vec::new();
-    let mut junctions = HashMap::default();
 
     let root_wire_count = route_root_wire(
         &graph.data,
@@ -751,7 +752,7 @@ where
         vertices,
         wire_views,
         ends,
-        &mut centering_candidates,
+        centering_candidates,
     )?;
 
     let branch_wire_count = route_branch_wires(
@@ -763,11 +764,11 @@ where
         vertices,
         wire_views,
         ends,
-        &mut centering_candidates,
-        &mut junctions,
+        centering_candidates,
+        junctions,
     )?;
 
-    center_wires(&centering_candidates, &graph.data, vertices, &junctions);
+    center_wires(&centering_candidates, &graph.data, vertices, junctions);
 
     net_view.write(NetView {
         wire_offset,

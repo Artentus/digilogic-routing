@@ -80,6 +80,8 @@ impl Graph {
         wire_views: &mut [MaybeUninit<WireView>],
     ) -> Result<NetView, RoutingError> {
         let mut ends = Vec::new();
+        let mut centering_candidates = Vec::new();
+        let mut junctions = HashMap::default();
         let mut net_view = MaybeUninit::uninit();
 
         routing::connect_net(
@@ -92,6 +94,8 @@ impl Graph {
             &mut wire_views.into(),
             &mut net_view,
             &mut ends,
+            &mut centering_candidates,
+            &mut junctions,
         )?;
 
         #[allow(unsafe_code)]

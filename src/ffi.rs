@@ -2,7 +2,7 @@
 #![deny(unsafe_op_in_unsafe_fn)]
 
 use crate::graph::{NodeIndex, INVALID_NODE_INDEX};
-use crate::routing::Array;
+use crate::routing::{Array, CenteringCandidate};
 use crate::*;
 use rayon::prelude::*;
 use std::mem::MaybeUninit;
@@ -511,6 +511,8 @@ pub unsafe extern "C" fn RT_graph_connect_nets(
         vertices: Array<'static, Vertex>,
         wire_views: Array<'static, WireView>,
         ends: Vec<Point>,
+        centering_candidates: Vec<CenteringCandidate>,
+        junctions: HashMap<Point, (usize, Direction)>,
     }
 
     struct ThreadlocalData {
@@ -549,6 +551,8 @@ pub unsafe extern "C" fn RT_graph_connect_nets(
                         vertices,
                         wire_views,
                         ends: Vec::new(),
+                        centering_candidates: Vec::new(),
+                        junctions: HashMap::default(),
                     }),
                     vertex_base_offset: vertices_start,
                     wire_base_offset: wire_views_start,
@@ -565,6 +569,8 @@ pub unsafe extern "C" fn RT_graph_connect_nets(
                 vertices,
                 wire_views,
                 ends,
+                centering_candidates,
+                junctions,
             } = &mut *threadlocal_data.mutable.borrow_mut();
 
             let endpoints = EndpointList::new(endpoints, net.first_endpoint);
@@ -580,6 +586,8 @@ pub unsafe extern "C" fn RT_graph_connect_nets(
                 wire_views,
                 net_view,
                 ends,
+                centering_candidates,
+                junctions,
             )
         });
 
