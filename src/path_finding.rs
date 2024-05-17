@@ -199,6 +199,7 @@ impl PathFinder {
             }
         }
 
+        let mut straight_dir = None;
         'outer: loop {
             if total_neighbor_count == 0 {
                 // There cannot possibly be a path, abort.
@@ -215,6 +216,24 @@ impl PathFinder {
             while let Some((current_index, _)) = self.open_queue.pop() {
                 let current_node = &graph.nodes[current_index];
 
+                let pred = self
+                    .predecessor
+                    .get(&current_index)
+                    .map(|&pred_index| (pred_index, &graph.nodes[pred_index]));
+
+                // Find which direction is straight ahead to apply weights.
+                if let Some((pred_index, pred_node)) = pred {
+                    let pred_to_current_dir = pred_node
+                        .neighbors
+                        .find(current_index)
+                        .expect("invalid predecessor");
+
+                    let current_to_pred_dir = current_node.neighbors.find(pred_index);
+                    debug_assert_eq!(current_to_pred_dir, Some(pred_to_current_dir.opposite()));
+
+                    straight_dir = Some(pred_to_current_dir);
+                }
+
                 // Shortest path to one end found, construct it.
                 if self.end_indices.contains(&current_index) {
                     self.assert_data_is_valid(graph);
@@ -230,26 +249,6 @@ impl PathFinder {
                         break 'outer;
                     }
                 }
-
-                let pred = self
-                    .predecessor
-                    .get(&current_index)
-                    .map(|&pred_index| (pred_index, &graph.nodes[pred_index]));
-
-                // Find which direction is straight ahead to apply weights.
-                let straight_dir = if let Some((pred_index, pred_node)) = pred {
-                    let pred_to_current_dir = pred_node
-                        .neighbors
-                        .find(current_index)
-                        .expect("invalid predecessor");
-
-                    let current_to_pred_dir = current_node.neighbors.find(pred_index);
-                    debug_assert_eq!(current_to_pred_dir, Some(pred_to_current_dir.opposite()));
-
-                    Some(pred_to_current_dir)
-                } else {
-                    None
-                };
 
                 for dir in Direction::ALL {
                     if Some(dir.opposite()) == straight_dir {
