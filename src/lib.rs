@@ -1,8 +1,9 @@
 #![deny(unsafe_code)]
 
-pub(crate) mod ffi;
+mod ffi;
 mod graph;
 mod path_finding;
+mod routing;
 
 #[cfg(test)]
 mod test;
@@ -10,10 +11,12 @@ mod test;
 use graph::GraphData;
 use path_finding::PathFinder;
 use std::cell::RefCell;
+use std::mem::MaybeUninit;
 use thread_local::ThreadLocal;
 
 pub use graph::{Anchor, BoundingBox, BoundingBoxIndex, Direction, Directions, Node, Point};
 pub use path_finding::{Path, PathFindResult, PathNode, PathNodeKind};
+pub use routing::{NetView, RoutingError, Vertex, WireView};
 
 type HashSet<T> = ahash::AHashSet<T>;
 type HashMap<K, V> = ahash::AHashMap<K, V>;
@@ -66,5 +69,32 @@ impl Graph {
         path_finder
             .find_path(&self.data, start, ends.iter().copied(), visit_all)
             .map(Path::clone)
+    }
+
+    #[inline]
+    pub fn connect_net(
+        &self,
+        endpoints: &[Point],
+        waypoints: &[Point],
+        vertices: &mut [MaybeUninit<Vertex>],
+        wire_views: &mut [MaybeUninit<WireView>],
+    ) -> Result<NetView, RoutingError> {
+        let mut ends = Vec::new();
+        let mut net_view = MaybeUninit::uninit();
+
+        routing::connect_net(
+            self,
+            endpoints.iter().copied(),
+            waypoints.iter().copied(),
+            0,
+            0,
+            &mut vertices.into(),
+            &mut wire_views.into(),
+            &mut net_view,
+            &mut ends,
+        )?;
+
+        #[allow(unsafe_code)]
+        Ok(unsafe { net_view.assume_init() })
     }
 }

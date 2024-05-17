@@ -40,6 +40,7 @@ pub struct PathNode {
 }
 
 #[derive(Default, Clone)]
+#[repr(transparent)]
 pub struct Path {
     nodes: Vec<PathNode>,
 }
@@ -51,30 +52,33 @@ impl Path {
     }
 
     #[inline]
-    pub fn iter(&self) -> impl Iterator<Item = PathNode> + '_ {
-        self.nodes.iter().copied()
+    pub fn nodes(&self) -> &[PathNode] {
+        &self.nodes
     }
 
-    pub fn iter_pruned(&self) -> impl Iterator<Item = PathNode> + '_ {
+    pub fn iter_pruned(&self) -> impl Iterator<Item = (usize, PathNode)> + '_ {
         let mut prev_dir: Option<Direction> = None;
-        self.nodes.iter().filter_map(move |&node| {
-            let include = if node.kind == PathNodeKind::Normal {
-                match (node.bend_direction, prev_dir) {
-                    (Some(dir), Some(prev_dir)) => dir != prev_dir,
-                    _ => true,
+        self.nodes
+            .iter()
+            .enumerate()
+            .filter_map(move |(index, &node)| {
+                let include = if node.kind == PathNodeKind::Normal {
+                    match (node.bend_direction, prev_dir) {
+                        (Some(dir), Some(prev_dir)) => dir != prev_dir,
+                        _ => true,
+                    }
+                } else {
+                    true
+                };
+
+                prev_dir = node.bend_direction;
+
+                if include {
+                    Some((index, node))
+                } else {
+                    None
                 }
-            } else {
-                true
-            };
-
-            prev_dir = node.bend_direction;
-
-            if include {
-                Some(node)
-            } else {
-                None
-            }
-        })
+            })
     }
 }
 
