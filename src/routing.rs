@@ -648,16 +648,19 @@ fn center_wires(
                 NudgeOffset::Horizontal(offset) => {
                     assert_eq!(node_a.position.x, node_b.position.x);
 
-                    if junction_point.x == node_a.position.x {
-                        let min_y = node_a.position.y.min(node_b.position.y);
-                        let max_y = node_a.position.y.max(node_b.position.y);
+                    let min_y = node_a.position.y.min(node_b.position.y);
+                    let max_y = node_a.position.y.max(node_b.position.y);
 
+                    if (junction_point.x == node_a.position.x)
+                        && matches!(junction_dir, Direction::NegX | Direction::PosX)
+                    {
+                        if (junction_point.y >= min_y) && (junction_point.y <= max_y) {
+                            vertices[junction_vertex].x += offset;
+                        }
+                    }
+
+                    if junction_point.x == (node_a.position.x + (offset as i32)) {
                         match junction_dir {
-                            Direction::NegX | Direction::PosX => {
-                                if (junction_point.y >= min_y) && (junction_point.y <= max_y) {
-                                    vertices[junction_vertex].x += offset;
-                                }
-                            }
                             Direction::PosY => {
                                 if junction_point.y == max_y {
                                     vertices[junction_vertex].y = min_y as f32;
@@ -668,22 +671,26 @@ fn center_wires(
                                     vertices[junction_vertex].y = max_y as f32;
                                 }
                             }
+                            _ => (),
                         }
                     }
                 }
                 NudgeOffset::Vertical(offset) => {
                     assert_eq!(node_a.position.y, node_b.position.y);
 
-                    if junction_point.y == node_a.position.y {
-                        let min_x = node_a.position.x.min(node_b.position.x);
-                        let max_x = node_a.position.x.max(node_b.position.x);
+                    let min_x = node_a.position.x.min(node_b.position.x);
+                    let max_x = node_a.position.x.max(node_b.position.x);
 
+                    if (junction_point.y == node_a.position.y)
+                        && matches!(junction_dir, Direction::NegY | Direction::PosY)
+                    {
+                        if (junction_point.x >= min_x) && (junction_point.x <= max_x) {
+                            vertices[junction_vertex].y += offset;
+                        }
+                    }
+
+                    if junction_point.y == (node_a.position.y + (offset as i32)) {
                         match junction_dir {
-                            Direction::NegY | Direction::PosY => {
-                                if (junction_point.x >= min_x) && (junction_point.x <= max_x) {
-                                    vertices[junction_vertex].y += offset;
-                                }
-                            }
                             Direction::PosX => {
                                 if junction_point.x == max_x {
                                     vertices[junction_vertex].x = min_x as f32;
@@ -694,6 +701,7 @@ fn center_wires(
                                     vertices[junction_vertex].x = max_x as f32;
                                 }
                             }
+                            _ => (),
                         }
                     }
                 }
