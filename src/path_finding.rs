@@ -187,6 +187,7 @@ impl PathFinder {
         &'a mut self,
         graph: &GraphData,
         start: Point,
+        start_straight_dir: Option<Direction>,
         ends: impl IntoIterator<Item = Point>,
         visit_all: bool,
     ) -> PathFindResult<&'a Path> {
@@ -263,17 +264,19 @@ impl PathFinder {
                 let pred = pred_index.map(|pred_index| (pred_index, &graph.nodes[pred_index]));
 
                 // Find which direction is straight ahead to apply weights.
-                let straight_dir = pred.map(|(pred_index, pred_node)| {
-                    let pred_to_current_dir = pred_node
-                        .neighbors
-                        .find(current_index)
-                        .expect("invalid predecessor");
+                let straight_dir = pred
+                    .map(|(pred_index, pred_node)| {
+                        let pred_to_current_dir = pred_node
+                            .neighbors
+                            .find(current_index)
+                            .expect("invalid predecessor");
 
-                    let current_to_pred_dir = current_node.neighbors.find(pred_index);
-                    debug_assert_eq!(current_to_pred_dir, Some(pred_to_current_dir.opposite()));
+                        let current_to_pred_dir = current_node.neighbors.find(pred_index);
+                        debug_assert_eq!(current_to_pred_dir, Some(pred_to_current_dir.opposite()));
 
-                    pred_to_current_dir
-                });
+                        pred_to_current_dir
+                    })
+                    .or(start_straight_dir);
 
                 for dir in Direction::ALL {
                     if Some(dir.opposite()) == straight_dir {

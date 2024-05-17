@@ -53,7 +53,7 @@ impl Graph {
     pub fn find_path(&self, start: Point, end: Point) -> PathFindResult<Path> {
         let mut path_finder = self.path_finder.get_or_default().borrow_mut();
         path_finder
-            .find_path(&self.data, start, [end], false)
+            .find_path(&self.data, start, None, [end], false)
             .map(Path::clone)
     }
 
@@ -67,7 +67,7 @@ impl Graph {
     ) -> PathFindResult<Path> {
         let mut path_finder = self.path_finder.get_or_default().borrow_mut();
         path_finder
-            .find_path(&self.data, start, ends.iter().copied(), visit_all)
+            .find_path(&self.data, start, None, ends.iter().copied(), visit_all)
             .map(Path::clone)
     }
 

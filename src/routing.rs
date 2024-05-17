@@ -419,10 +419,11 @@ fn route_root_wire<I>(
 where
     I: IntoIterator<Item = Point>,
 {
-    let last_waypoint = match path_finder.find_path(graph, root_start, waypoints, true) {
+    let path_tail = match path_finder.find_path(graph, root_start, None, waypoints, true) {
         PathFindResult::Found(path) => {
             let path_len = push_vertices(graph, vertices, path, ends)
                 .map_err(|_| RoutingError::VertexBufferOverflow)?;
+            assert!(path_len >= 2);
 
             wire_views
                 .push(WireView {
@@ -430,7 +431,10 @@ where
                 })
                 .map_err(|_| RoutingError::WireViewBufferOverflow)?;
 
-            Some(path.nodes().last().unwrap().position)
+            let (last, head) = path.nodes().split_last().unwrap();
+            let prev_last = head.last().unwrap();
+
+            Some((last.position, prev_last.bend_direction))
         }
         PathFindResult::NotFound => None,
         PathFindResult::InvalidStartPoint | PathFindResult::InvalidEndPoint => {
@@ -440,7 +444,8 @@ where
 
     let path_len = match path_finder.find_path(
         graph,
-        last_waypoint.unwrap_or(root_start),
+        path_tail.map(|(last, _)| last).unwrap_or(root_start),
+        path_tail.and_then(|(_, dir)| dir),
         [root_end],
         false,
     ) {
@@ -467,7 +472,7 @@ where
         })
         .map_err(|_| RoutingError::WireViewBufferOverflow)?;
 
-    Ok((last_waypoint.is_some() as u32) + 1)
+    Ok((path_tail.is_some() as u32) + 1)
 }
 
 fn route_branch_wires<I>(
@@ -487,24 +492,24 @@ where
 
     for endpoint in endpoints {
         if (endpoint != root_start) && (endpoint != root_end) {
-            let path_len = match path_finder.find_path(graph, endpoint, ends.keys().copied(), false)
-            {
-                PathFindResult::Found(path) => push_vertices(graph, vertices, path, ends)
-                    .map_err(|_| RoutingError::VertexBufferOverflow)?,
-                PathFindResult::NotFound => {
-                    extend_ends([endpoint, root_start], ends);
-                    vertices
-                        .push(endpoint.into())
-                        .map_err(|_| RoutingError::VertexBufferOverflow)?;
-                    vertices
-                        .push(root_start.into())
-                        .map_err(|_| RoutingError::VertexBufferOverflow)?;
-                    2
-                }
-                PathFindResult::InvalidStartPoint | PathFindResult::InvalidEndPoint => {
-                    return Err(RoutingError::InvalidPoint);
-                }
-            };
+            let path_len =
+                match path_finder.find_path(graph, endpoint, None, ends.keys().copied(), false) {
+                    PathFindResult::Found(path) => push_vertices(graph, vertices, path, ends)
+                        .map_err(|_| RoutingError::VertexBufferOverflow)?,
+                    PathFindResult::NotFound => {
+                        extend_ends([endpoint, root_start], ends);
+                        vertices
+                            .push(endpoint.into())
+                            .map_err(|_| RoutingError::VertexBufferOverflow)?;
+                        vertices
+                            .push(root_start.into())
+                            .map_err(|_| RoutingError::VertexBufferOverflow)?;
+                        2
+                    }
+                    PathFindResult::InvalidStartPoint | PathFindResult::InvalidEndPoint => {
+                        return Err(RoutingError::InvalidPoint);
+                    }
+                };
 
             wire_views
                 .push(WireView {
