@@ -1,7 +1,6 @@
 use crate::graph::{NodeIndex, INVALID_NODE_INDEX};
 use crate::*;
 use std::mem::MaybeUninit;
-use std::ops::{Deref, DerefMut};
 
 pub(crate) struct Array<'a, T> {
     pub(crate) data: &'a mut [MaybeUninit<T>],
@@ -26,26 +25,6 @@ impl<'a, T> From<&'a mut [MaybeUninit<T>]> for Array<'a, T> {
     #[inline]
     fn from(data: &'a mut [MaybeUninit<T>]) -> Self {
         Self { data, len: 0 }
-    }
-}
-
-impl<'a, T> Deref for Array<'a, T> {
-    type Target = [T];
-
-    #[inline]
-    #[allow(unsafe_code)]
-    fn deref(&self) -> &Self::Target {
-        let slice = &self.data[..self.len];
-        unsafe { &*(slice as *const [MaybeUninit<T>] as *const [T]) }
-    }
-}
-
-impl<'a, T> DerefMut for Array<'a, T> {
-    #[inline]
-    #[allow(unsafe_code)]
-    fn deref_mut(&mut self) -> &mut Self::Target {
-        let slice = &mut self.data[..self.len];
-        unsafe { &mut *(slice as *mut [MaybeUninit<T>] as *mut [T]) }
     }
 }
 
@@ -352,7 +331,7 @@ fn push_vertices(
     graph: &GraphData,
     vertices: &mut Array<Vertex>,
     path: &Path,
-    ends: &mut HashMap<Point, (Point, u32)>,
+    ends: &mut HashMap<Point, Point>,
 ) -> Result<u16, ()> {
     let mut path_len = 0usize;
 
@@ -381,14 +360,12 @@ fn push_vertices(
 
             for &PathNode { position, .. } in &path.nodes()[prev_path_node_index..=path_node_index]
             {
-                let nudged = ends
-                    .entry(position)
-                    .or_insert((position, vertices.len as u32));
+                let nudged = ends.entry(position).or_insert(position);
 
                 match nudge_offset {
                     None => (),
-                    Some(NudgeOffset::Horizontal(offset)) => nudged.0.x += offset,
-                    Some(NudgeOffset::Vertical(offset)) => nudged.0.y += offset,
+                    Some(NudgeOffset::Horizontal(offset)) => nudged.x += offset,
+                    Some(NudgeOffset::Vertical(offset)) => nudged.y += offset,
                 }
             }
 
@@ -402,30 +379,18 @@ fn push_vertices(
 
     if let Some((_, prev_path_node, _)) = prev {
         let original = prev_path_node.position;
-        let (nudged, nudged_vertex) = ends.get_mut(&original).unwrap();
+        let nudged = ends[&original];
 
         let actual = match prev_prev_dir {
-            Some(Some(Direction::NegX)) | Some(Some(Direction::PosX)) => {
-                if nudged.y != original.y {
-                    vertices[*nudged_vertex as usize].y = original.y as f32;
-                }
-
-                Point {
-                    x: nudged.x,
-                    y: original.y,
-                }
-            }
-            Some(Some(Direction::NegY)) | Some(Some(Direction::PosY)) => {
-                if nudged.x != original.x {
-                    vertices[*nudged_vertex as usize].x = original.x as f32;
-                }
-
-                Point {
-                    x: original.x,
-                    y: nudged.y,
-                }
-            }
-            _ => *nudged,
+            Some(Some(Direction::NegX)) | Some(Some(Direction::PosX)) => Point {
+                x: nudged.x,
+                y: original.y,
+            },
+            Some(Some(Direction::NegY)) | Some(Some(Direction::PosY)) => Point {
+                x: original.x,
+                y: nudged.y,
+            },
+            _ => nudged,
         };
 
         vertices.push(actual.into())?;
@@ -443,19 +408,14 @@ pub enum RoutingError {
     InvalidPoint,
 }
 
-fn extend_ends(
-    points: impl IntoIterator<Item = Point>,
-    mut vertex_index: u32,
-    ends: &mut HashMap<Point, (Point, u32)>,
-) {
+fn extend_ends(points: impl IntoIterator<Item = Point>, ends: &mut HashMap<Point, Point>) {
     use std::collections::hash_map::Entry;
 
     for point in points {
         match ends.entry(point) {
             Entry::Occupied(_) => (),
             Entry::Vacant(entry) => {
-                entry.insert((point, vertex_index));
-                vertex_index += 1;
+                entry.insert(point);
             }
         }
     }
@@ -469,7 +429,7 @@ fn route_root_wire<I>(
     root_end: Point,
     vertices: &mut Array<Vertex>,
     wire_views: &mut Array<WireView>,
-    ends: &mut HashMap<Point, (Point, u32)>,
+    ends: &mut HashMap<Point, Point>,
 ) -> Result<u32, RoutingError>
 where
     I: IntoIterator<Item = Point>,
@@ -507,7 +467,7 @@ where
         PathFindResult::Found(path) => push_vertices(graph, vertices, path, ends)
             .map_err(|_| RoutingError::VertexBufferOverflow)?,
         PathFindResult::NotFound => {
-            extend_ends([root_start, root_end], vertices.len as u32, ends);
+            extend_ends([root_start, root_end], ends);
             vertices
                 .push(root_start.into())
                 .map_err(|_| RoutingError::VertexBufferOverflow)?;
@@ -538,7 +498,7 @@ fn route_branch_wires<I>(
     root_end: Point,
     vertices: &mut Array<Vertex>,
     wire_views: &mut Array<WireView>,
-    ends: &mut HashMap<Point, (Point, u32)>,
+    ends: &mut HashMap<Point, Point>,
 ) -> Result<u32, RoutingError>
 where
     I: IntoIterator<Item = Point>,
@@ -552,7 +512,7 @@ where
                     PathFindResult::Found(path) => push_vertices(graph, vertices, path, ends)
                         .map_err(|_| RoutingError::VertexBufferOverflow)?,
                     PathFindResult::NotFound => {
-                        extend_ends([endpoint, root_start], vertices.len as u32, ends);
+                        extend_ends([endpoint, root_start], ends);
                         vertices
                             .push(endpoint.into())
                             .map_err(|_| RoutingError::VertexBufferOverflow)?;
@@ -588,7 +548,7 @@ pub(crate) fn connect_net<EndpointList, WaypointList>(
     vertices: &mut Array<Vertex>,
     wire_views: &mut Array<WireView>,
     net_view: &mut MaybeUninit<NetView>,
-    ends: &mut HashMap<Point, (Point, u32)>,
+    ends: &mut HashMap<Point, Point>,
 ) -> Result<(), RoutingError>
 where
     EndpointList: Clone + IntoIterator<Item = Point>,
