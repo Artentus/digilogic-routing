@@ -316,8 +316,10 @@ where
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum ConnectionKind {
-    Connected,
-    ConnectedThroughAnchor,
+    Connected {
+        through_anchor: bool,
+        through_junction: bool,
+    },
     Unconnected,
 }
 
@@ -337,24 +339,25 @@ fn are_connected_vertically(
         Direction::NegY
     };
 
-    let mut through_anchor = node_a.is_anchor
-        || node_b.is_anchor
-        || junctions.contains_key(&node_a.position)
-        || junctions.contains_key(&node_b.position);
+    let mut through_anchor = node_a.is_anchor || node_b.is_anchor;
+    let mut through_junction =
+        junctions.contains_key(&node_a.position) || junctions.contains_key(&node_b.position);
 
     a = node_a.neighbors[dir];
     while a != INVALID_NODE_INDEX {
         if a == b {
-            return if through_anchor {
-                ConnectionKind::ConnectedThroughAnchor
-            } else {
-                ConnectionKind::Connected
+            return ConnectionKind::Connected {
+                through_anchor,
+                through_junction,
             };
         }
 
         let node = &graph.nodes[a];
-        if node.is_anchor || junctions.contains_key(&node.position) {
+        if node.is_anchor {
             through_anchor = true;
+        }
+        if junctions.contains_key(&node.position) {
+            through_junction = true;
         }
 
         a = node.neighbors[dir];
@@ -379,24 +382,25 @@ fn are_connected_horizontally(
         Direction::NegX
     };
 
-    let mut through_anchor = node_a.is_anchor
-        || node_b.is_anchor
-        || junctions.contains_key(&node_a.position)
-        || junctions.contains_key(&node_b.position);
+    let mut through_anchor = node_a.is_anchor || node_b.is_anchor;
+    let mut through_junction =
+        junctions.contains_key(&node_a.position) || junctions.contains_key(&node_b.position);
 
     a = node_a.neighbors[dir];
     while a != INVALID_NODE_INDEX {
         if a == b {
-            return if through_anchor {
-                ConnectionKind::ConnectedThroughAnchor
-            } else {
-                ConnectionKind::Connected
+            return ConnectionKind::Connected {
+                through_anchor,
+                through_junction,
             };
         }
 
         let node = &graph.nodes[a];
-        if node.is_anchor || junctions.contains_key(&node.position) {
+        if node.is_anchor {
             through_anchor = true;
+        }
+        if junctions.contains_key(&node.position) {
+            through_junction = true;
         }
 
         a = node.neighbors[dir];
@@ -422,6 +426,8 @@ fn center_in_alley(
     if node_a.position.x == node_b.position.x {
         let mut min_x = node_a.position.x;
         let mut max_x = node_a.position.x;
+        let mut x_min_cap = None;
+        let mut x_max_cap = None;
 
         let mut current_node_a = node_a;
         let mut current_node_b = node_b;
@@ -442,13 +448,21 @@ fn center_in_alley(
             }
 
             match are_connected_vertically(graph, next_a_index, next_b_index, junctions) {
-                ConnectionKind::Connected => {
+                ConnectionKind::Connected {
+                    through_anchor,
+                    through_junction,
+                } => {
                     min_x = current_node_a.position.x;
-                    continue;
-                }
-                ConnectionKind::ConnectedThroughAnchor => {
-                    min_x = current_node_a.position.x;
-                    break;
+
+                    if through_junction && x_min_cap.is_none() {
+                        x_min_cap = Some(current_node_a.position.x);
+                    }
+
+                    if through_anchor {
+                        break;
+                    } else {
+                        continue;
+                    }
                 }
                 ConnectionKind::Unconnected => break,
             }
@@ -473,13 +487,21 @@ fn center_in_alley(
             }
 
             match are_connected_vertically(graph, next_a_index, next_b_index, junctions) {
-                ConnectionKind::Connected => {
+                ConnectionKind::Connected {
+                    through_anchor,
+                    through_junction,
+                } => {
                     max_x = current_node_a.position.x;
-                    continue;
-                }
-                ConnectionKind::ConnectedThroughAnchor => {
-                    max_x = current_node_a.position.x;
-                    break;
+
+                    if through_junction && x_max_cap.is_none() {
+                        x_max_cap = Some(current_node_a.position.x);
+                    }
+
+                    if through_anchor {
+                        break;
+                    } else {
+                        continue;
+                    }
                 }
                 ConnectionKind::Unconnected => break,
             }
@@ -491,7 +513,10 @@ fn center_in_alley(
             panic!("invalid vertex offset");
         };
 
-        let center_x = (min_x + max_x) as f32 / 2.0;
+        let center_x = ((min_x + max_x) as f32 / 2.0).clamp(
+            x_min_cap.unwrap_or(min_x) as f32,
+            x_max_cap.unwrap_or(max_x) as f32,
+        );
         vertex_a.x = center_x;
         vertex_b.x = center_x;
 
@@ -501,6 +526,8 @@ fn center_in_alley(
 
         let mut min_y = node_a.position.y;
         let mut max_y = node_a.position.y;
+        let mut y_min_cap = None;
+        let mut y_max_cap = None;
 
         let mut current_node_a = node_a;
         let mut current_node_b = node_b;
@@ -521,13 +548,21 @@ fn center_in_alley(
             }
 
             match are_connected_horizontally(graph, next_a_index, next_b_index, junctions) {
-                ConnectionKind::Connected => {
+                ConnectionKind::Connected {
+                    through_anchor,
+                    through_junction,
+                } => {
                     min_y = current_node_a.position.y;
-                    continue;
-                }
-                ConnectionKind::ConnectedThroughAnchor => {
-                    min_y = current_node_a.position.y;
-                    break;
+
+                    if through_junction && y_min_cap.is_none() {
+                        y_min_cap = Some(current_node_a.position.y);
+                    }
+
+                    if through_anchor {
+                        break;
+                    } else {
+                        continue;
+                    }
                 }
                 ConnectionKind::Unconnected => break,
             }
@@ -552,13 +587,21 @@ fn center_in_alley(
             }
 
             match are_connected_horizontally(graph, next_a_index, next_b_index, junctions) {
-                ConnectionKind::Connected => {
+                ConnectionKind::Connected {
+                    through_anchor,
+                    through_junction,
+                } => {
                     max_y = current_node_a.position.y;
-                    continue;
-                }
-                ConnectionKind::ConnectedThroughAnchor => {
-                    max_y = current_node_a.position.y;
-                    break;
+
+                    if through_junction && y_max_cap.is_none() {
+                        y_max_cap = Some(current_node_a.position.y);
+                    }
+
+                    if through_anchor {
+                        break;
+                    } else {
+                        continue;
+                    }
                 }
                 ConnectionKind::Unconnected => break,
             }
@@ -570,7 +613,10 @@ fn center_in_alley(
             panic!("invalid vertex offset");
         };
 
-        let center_y = ((min_y + max_y) as f32) / 2.0;
+        let center_y = ((min_y + max_y) as f32 / 2.0).clamp(
+            y_min_cap.unwrap_or(min_y) as f32,
+            y_max_cap.unwrap_or(max_y) as f32,
+        );
         vertex_a.y = center_y;
         vertex_b.y = center_y;
 
