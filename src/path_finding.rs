@@ -210,6 +210,9 @@ impl PathFinder {
                 if self.end_indices.insert(end_index) {
                     total_neighbor_count += neighbor_count;
                 }
+            } else {
+                #[cfg(debug_assertions)]
+                println!("Waypoint ({}, {}) unreachable, skipping", end.x, end.y);
             }
         }
 
@@ -321,6 +324,20 @@ impl PathFinder {
                         self.open_queue.push(neighbor_index, Reverse(new_f_score));
                     }
                 }
+            }
+
+            #[cfg(debug_assertions)]
+            {
+                print!("Unable to find path to remaining waypoints [");
+                for (i, &end_index) in self.end_indices.iter().enumerate() {
+                    if i > 0 {
+                        print!(", ");
+                    }
+
+                    let end_node = &graph.nodes[end_index];
+                    print!("({}, {})", end_node.position.x, end_node.position.y);
+                }
+                println!("]");
             }
 
             break 'outer;
