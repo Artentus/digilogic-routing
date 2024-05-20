@@ -4,6 +4,7 @@ mod ffi;
 mod graph;
 mod path_finding;
 mod routing;
+mod segment_tree;
 
 #[cfg(test)]
 mod test;

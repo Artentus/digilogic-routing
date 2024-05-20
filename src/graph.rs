@@ -1,3 +1,4 @@
+use crate::segment_tree::*;
 use crate::HashMap;
 use bitflags::bitflags;
 use rayon::prelude::*;
@@ -437,16 +438,51 @@ impl IndexMut<NodeIndex> for NodeList {
     }
 }
 
+struct HorizontalBoundingBox {
+    index: BoundingBoxIndex,
+    min_x: i32,
+    max_x: i32,
+}
+
+struct VerticalBoundingBox {
+    index: BoundingBoxIndex,
+    min_y: i32,
+    max_y: i32,
+}
+
 #[derive(Default)]
 pub(crate) struct BoundingBoxList {
-    // TODO: use some kind of space partitioning
     bounding_boxes: Vec<BoundingBox>,
+    horizontal_bounding_boxes: SegmentTree<i32, HorizontalBoundingBox>,
+    vertical_bounding_boxes: SegmentTree<i32, VerticalBoundingBox>,
 }
 
 impl BoundingBoxList {
     fn build(&mut self, bounding_boxes: &[BoundingBox]) {
         self.bounding_boxes.clear();
         self.bounding_boxes.extend_from_slice(bounding_boxes);
+
+        self.horizontal_bounding_boxes
+            .build(bounding_boxes.iter().enumerate().map(|(i, bb)| Segment {
+                start_inclusive: bb.min_y(),
+                end_inclusive: bb.max_y(),
+                value: HorizontalBoundingBox {
+                    index: BoundingBoxIndex::from_usize(i).expect("too many bounding boxes"),
+                    min_x: bb.min_x(),
+                    max_x: bb.max_x(),
+                },
+            }));
+
+        self.vertical_bounding_boxes
+            .build(bounding_boxes.iter().enumerate().map(|(i, bb)| Segment {
+                start_inclusive: bb.min_x(),
+                end_inclusive: bb.max_x(),
+                value: VerticalBoundingBox {
+                    index: BoundingBoxIndex::from_usize(i).expect("too many bounding boxes"),
+                    min_y: bb.min_y(),
+                    max_y: bb.max_y(),
+                },
+            }));
     }
 
     #[inline]
@@ -466,16 +502,12 @@ impl BoundingBoxList {
     ) -> bool {
         assert!(x1 < x2);
 
-        for (i, &bb) in self.bounding_boxes.iter().enumerate() {
-            if Some(i) == ignore_box.to_usize() {
+        for bb in self.horizontal_bounding_boxes.iter_containing(&y) {
+            if bb.index == ignore_box {
                 continue;
             }
 
-            if (y < bb.min_y()) || (y > bb.max_y()) {
-                continue;
-            }
-
-            if (x2 < bb.min_x()) || (x1 > bb.max_x()) {
+            if (x2 < bb.min_x) || (x1 > bb.max_x) {
                 continue;
             }
 
@@ -495,16 +527,12 @@ impl BoundingBoxList {
     ) -> bool {
         assert!(y1 < y2);
 
-        for (i, &bb) in self.bounding_boxes.iter().enumerate() {
-            if Some(i) == ignore_box.to_usize() {
+        for bb in self.vertical_bounding_boxes.iter_containing(&x) {
+            if bb.index == ignore_box {
                 continue;
             }
 
-            if (x < bb.min_x()) || (x > bb.max_x()) {
-                continue;
-            }
-
-            if (y2 < bb.min_y()) || (y1 > bb.max_y()) {
+            if (y2 < bb.min_y) || (y1 > bb.max_y) {
                 continue;
             }
 
