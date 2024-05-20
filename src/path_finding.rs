@@ -140,6 +140,10 @@ impl PathFinder {
             bend_direction: None,
         });
 
+        if end_index == start_index {
+            return;
+        }
+
         let mut current_index = end_index;
         loop {
             let pred_index = *self.predecessor.get(&current_index).expect("invalid path");
