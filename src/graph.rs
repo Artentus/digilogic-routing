@@ -502,19 +502,48 @@ impl BoundingBoxList {
     ) -> bool {
         assert!(x1 < x2);
 
-        for bb in self.horizontal_bounding_boxes.iter_containing(&y) {
-            if bb.index == ignore_box {
-                continue;
+        let fast_result = {
+            for bb in self.horizontal_bounding_boxes.iter_containing(&y) {
+                if bb.index == ignore_box {
+                    continue;
+                }
+
+                if (x2 < bb.min_x) || (x1 > bb.max_x) {
+                    continue;
+                }
+
+                return false;
             }
 
-            if (x2 < bb.min_x) || (x1 > bb.max_x) {
-                continue;
-            }
+            true
+        };
 
-            return false;
+        #[cfg(debug_assertions)]
+        {
+            let slow_result = {
+                for (i, &bb) in self.bounding_boxes.iter().enumerate() {
+                    if Some(i) == ignore_box.to_usize() {
+                        continue;
+                    }
+
+                    if (y < bb.min_y()) || (y > bb.max_y()) {
+                        continue;
+                    }
+
+                    if (x2 < bb.min_x()) || (x1 > bb.max_x()) {
+                        continue;
+                    }
+
+                    return false;
+                }
+
+                true
+            };
+
+            assert_eq!(slow_result, fast_result);
         }
 
-        true
+        fast_result
     }
 
     /// Determines if two vertically aligned points have a sightline to each other.
@@ -527,19 +556,48 @@ impl BoundingBoxList {
     ) -> bool {
         assert!(y1 < y2);
 
-        for bb in self.vertical_bounding_boxes.iter_containing(&x) {
-            if bb.index == ignore_box {
-                continue;
+        let fast_result = {
+            for bb in self.vertical_bounding_boxes.iter_containing(&x) {
+                if bb.index == ignore_box {
+                    continue;
+                }
+
+                if (y2 < bb.min_y) || (y1 > bb.max_y) {
+                    continue;
+                }
+
+                return false;
             }
 
-            if (y2 < bb.min_y) || (y1 > bb.max_y) {
-                continue;
-            }
+            true
+        };
 
-            return false;
+        #[cfg(debug_assertions)]
+        {
+            let slow_result = {
+                for (i, &bb) in self.bounding_boxes.iter().enumerate() {
+                    if Some(i) == ignore_box.to_usize() {
+                        continue;
+                    }
+
+                    if (x < bb.min_x()) || (x > bb.max_x()) {
+                        continue;
+                    }
+
+                    if (y2 < bb.min_y()) || (y1 > bb.max_y()) {
+                        continue;
+                    }
+
+                    return false;
+                }
+
+                true
+            };
+
+            assert_eq!(slow_result, fast_result);
         }
 
-        true
+        fast_result
     }
 }
 
