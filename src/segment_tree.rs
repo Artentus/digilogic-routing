@@ -1,92 +1,112 @@
 #[derive(Debug)]
-pub struct Segment<R, T> {
-    pub start_inclusive: R,
-    pub end_inclusive: R,
+pub struct Segment<T> {
+    pub start_inclusive: i32,
+    pub end_inclusive: i32,
     pub value: T,
 }
 
-impl<R: PartialEq, T> PartialEq for Segment<R, T> {
+impl<T> Segment<T> {
     #[inline]
-    fn eq(&self, other: &Self) -> bool {
-        self.start_inclusive.eq(&other.start_inclusive)
-    }
-}
-
-impl<R: Eq, T> Eq for Segment<R, T> {}
-
-impl<R: PartialOrd, T> PartialOrd for Segment<R, T> {
-    #[inline]
-    fn partial_cmp(&self, other: &Self) -> Option<std::cmp::Ordering> {
-        self.start_inclusive.partial_cmp(&other.start_inclusive)
-    }
-}
-
-impl<R: Ord, T> Ord for Segment<R, T> {
-    #[inline]
-    fn cmp(&self, other: &Self) -> std::cmp::Ordering {
-        self.start_inclusive.cmp(&other.start_inclusive)
+    fn len(&self) -> i32 {
+        assert!(self.end_inclusive >= self.start_inclusive);
+        self.end_inclusive - self.start_inclusive + 1
     }
 }
 
 #[derive(Debug)]
-#[repr(transparent)]
-pub struct SegmentTree<R, T> {
-    segments: Vec<Segment<R, T>>,
+pub struct SegmentTree<T> {
+    segments: Vec<Segment<T>>,
+    max_segment_len: i32,
 }
 
-impl<R, T> Default for SegmentTree<R, T> {
+impl<T> Default for SegmentTree<T> {
     #[inline]
     fn default() -> Self {
         Self {
             segments: Vec::new(),
+            max_segment_len: 0,
         }
     }
 }
 
-impl<R: Ord, T> SegmentTree<R, T> {
-    pub fn build(&mut self, segments: impl IntoIterator<Item = Segment<R, T>>)
+impl<T> SegmentTree<T> {
+    pub fn build(&mut self, segments: impl IntoIterator<Item = Segment<T>>)
     where
-        Segment<R, T>: Send,
+        Segment<T>: Send,
     {
         use rayon::prelude::*;
 
         self.segments.clear();
-        self.segments.extend(
-            segments
-                .into_iter()
-                .inspect(|segment| debug_assert!(segment.start_inclusive <= segment.end_inclusive)),
-        );
-        self.segments.par_sort_unstable();
+        self.segments.extend(segments.into_iter());
+        self.segments
+            .par_sort_unstable_by_key(|segment| segment.end_inclusive);
+        self.max_segment_len = self.segments.iter().map(Segment::len).max().unwrap_or(0);
     }
 
-    pub fn iter_containing<'a>(&'a self, position: &'a R) -> impl Iterator<Item = &'a T> {
-        let mut start_index = match self
+    fn find_start_index(&self, position: i32) -> usize {
+        match self
             .segments
-            .binary_search_by(|segment| segment.start_inclusive.cmp(position))
+            .binary_search_by(|segment| segment.end_inclusive.cmp(&position))
         {
-            Ok(index) | Err(index) => index,
-        };
+            Ok(mut index) => loop {
+                if index == 0 {
+                    return 0;
+                }
 
-        loop {
-            let Some(segment) = self.segments.get(start_index) else {
-                break;
-            };
+                if self.segments[index].end_inclusive >= position {
+                    index -= 1;
+                } else {
+                    return index + 1;
+                }
+            },
+            Err(index) => index,
+        }
+    }
 
-            if segment.start_inclusive > *position {
-                start_index += 1;
-                break;
+    fn find_end_index(&self, position: i32) -> usize {
+        match self.segments.binary_search_by(|segment| {
+            (segment.end_inclusive - self.max_segment_len).cmp(&position)
+        }) {
+            Ok(mut index) => {
+                while let Some(segment) = self.segments.get(index) {
+                    if (segment.end_inclusive - self.max_segment_len) < position {
+                        index += 1;
+                    } else {
+                        break;
+                    }
+                }
+
+                index
+            }
+            Err(index) => index,
+        }
+    }
+
+    pub fn iter_containing<'a>(&'a self, position: i32) -> impl Iterator<Item = &'a T> {
+        let start_index = self.find_start_index(position);
+        let end_index = self.find_end_index(position);
+
+        #[cfg(debug_assertions)]
+        {
+            if let Some(start_segment) = self.segments.get(start_index) {
+                assert!(start_segment.end_inclusive >= position);
             }
 
-            match start_index.checked_sub(1) {
-                Some(index) => start_index = index,
-                None => break,
+            if let Some(before_start_index) = start_index.checked_sub(1) {
+                if let Some(before_start_segment) = self.segments.get(before_start_index) {
+                    assert!(before_start_segment.end_inclusive < position);
+                }
+            }
+
+            if let Some(end_segment) = self.segments.get(end_index) {
+                assert!(end_segment.start_inclusive > position);
             }
         }
 
-        self.segments[start_index..]
+        self.segments[start_index..end_index]
             .iter()
-            .take_while(|segment| segment.start_inclusive <= *position)
-            .filter(|segment| segment.end_inclusive >= *position)
+            .filter(move |segment| segment.start_inclusive <= position)
+            .inspect(move |segment| debug_assert!(segment.end_inclusive >= position))
             .map(|segment| &segment.value)
     }
 }

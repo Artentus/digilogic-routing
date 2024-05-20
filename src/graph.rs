@@ -438,12 +438,14 @@ impl IndexMut<NodeIndex> for NodeList {
     }
 }
 
+#[derive(Debug)]
 struct HorizontalBoundingBox {
     index: BoundingBoxIndex,
     min_x: i32,
     max_x: i32,
 }
 
+#[derive(Debug)]
 struct VerticalBoundingBox {
     index: BoundingBoxIndex,
     min_y: i32,
@@ -453,8 +455,8 @@ struct VerticalBoundingBox {
 #[derive(Default)]
 pub(crate) struct BoundingBoxList {
     bounding_boxes: Vec<BoundingBox>,
-    horizontal_bounding_boxes: SegmentTree<i32, HorizontalBoundingBox>,
-    vertical_bounding_boxes: SegmentTree<i32, VerticalBoundingBox>,
+    horizontal_bounding_boxes: SegmentTree<HorizontalBoundingBox>,
+    vertical_bounding_boxes: SegmentTree<VerticalBoundingBox>,
 }
 
 impl BoundingBoxList {
@@ -502,8 +504,8 @@ impl BoundingBoxList {
     ) -> bool {
         assert!(x1 < x2);
 
-        let fast_result = {
-            for bb in self.horizontal_bounding_boxes.iter_containing(&y) {
+        let fast_result = 'fast: {
+            for bb in self.horizontal_bounding_boxes.iter_containing(y) {
                 if bb.index == ignore_box {
                     continue;
                 }
@@ -512,7 +514,7 @@ impl BoundingBoxList {
                     continue;
                 }
 
-                return false;
+                break 'fast false;
             }
 
             true
@@ -520,7 +522,7 @@ impl BoundingBoxList {
 
         #[cfg(debug_assertions)]
         {
-            let slow_result = {
+            let slow_result = 'slow: {
                 for (i, &bb) in self.bounding_boxes.iter().enumerate() {
                     if Some(i) == ignore_box.to_usize() {
                         continue;
@@ -534,13 +536,19 @@ impl BoundingBoxList {
                         continue;
                     }
 
-                    return false;
+                    break 'slow false;
                 }
 
                 true
             };
 
-            assert_eq!(slow_result, fast_result);
+            //assert_eq!(slow_result, fast_result);
+            if slow_result != fast_result {
+                for bb in self.horizontal_bounding_boxes.iter_containing(y) {
+                    println!("visiting bb {bb:#?}");
+                }
+                panic!("segment tree fail for y = {y}, slow = {slow_result}, fast = {fast_result}");
+            }
         }
 
         fast_result
@@ -556,8 +564,8 @@ impl BoundingBoxList {
     ) -> bool {
         assert!(y1 < y2);
 
-        let fast_result = {
-            for bb in self.vertical_bounding_boxes.iter_containing(&x) {
+        let fast_result = 'fast: {
+            for bb in self.vertical_bounding_boxes.iter_containing(x) {
                 if bb.index == ignore_box {
                     continue;
                 }
@@ -566,7 +574,7 @@ impl BoundingBoxList {
                     continue;
                 }
 
-                return false;
+                break 'fast false;
             }
 
             true
@@ -574,7 +582,7 @@ impl BoundingBoxList {
 
         #[cfg(debug_assertions)]
         {
-            let slow_result = {
+            let slow_result = 'slow: {
                 for (i, &bb) in self.bounding_boxes.iter().enumerate() {
                     if Some(i) == ignore_box.to_usize() {
                         continue;
@@ -588,13 +596,19 @@ impl BoundingBoxList {
                         continue;
                     }
 
-                    return false;
+                    break 'slow false;
                 }
 
                 true
             };
 
-            assert_eq!(slow_result, fast_result);
+            //assert_eq!(slow_result, fast_result);
+            if slow_result != fast_result {
+                for bb in self.vertical_bounding_boxes.iter_containing(x) {
+                    println!("visiting bb {bb:#?}");
+                }
+                panic!("segment tree fail for x = {x}, slow = {slow_result}, fast = {fast_result}");
+            }
         }
 
         fast_result
