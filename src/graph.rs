@@ -542,13 +542,7 @@ impl BoundingBoxList {
                 true
             };
 
-            //assert_eq!(slow_result, fast_result);
-            if slow_result != fast_result {
-                for bb in self.horizontal_bounding_boxes.iter_containing(y) {
-                    println!("visiting bb {bb:#?}");
-                }
-                panic!("segment tree fail for y = {y}, slow = {slow_result}, fast = {fast_result}");
-            }
+            assert_eq!(slow_result, fast_result);
         }
 
         fast_result
@@ -602,13 +596,7 @@ impl BoundingBoxList {
                 true
             };
 
-            //assert_eq!(slow_result, fast_result);
-            if slow_result != fast_result {
-                for bb in self.vertical_bounding_boxes.iter_containing(x) {
-                    println!("visiting bb {bb:#?}");
-                }
-                panic!("segment tree fail for x = {x}, slow = {slow_result}, fast = {fast_result}");
-            }
+            assert_eq!(slow_result, fast_result);
         }
 
         fast_result
