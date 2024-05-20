@@ -209,18 +209,21 @@ where
         PathFindResult::Found(path) => {
             let path_len = push_vertices(graph, vertices, path, ends, centering_candidates)
                 .map_err(|_| RoutingError::VertexBufferOverflow)?;
-            assert!(path_len >= 2);
 
-            wire_views
-                .push(WireView {
-                    vertex_count: path_len,
-                })
-                .map_err(|_| RoutingError::WireViewBufferOverflow)?;
+            if path_len < 2 {
+                None
+            } else {
+                wire_views
+                    .push(WireView {
+                        vertex_count: path_len,
+                    })
+                    .map_err(|_| RoutingError::WireViewBufferOverflow)?;
 
-            let (last, head) = path.nodes().split_last().unwrap();
-            let prev_last = head.last().unwrap();
+                let (last, head) = path.nodes().split_last().unwrap();
+                let prev_last = head.last().unwrap();
 
-            Some((last.position, prev_last.bend_direction))
+                Some((last.position, prev_last.bend_direction))
+            }
         }
         PathFindResult::NotFound => None,
         PathFindResult::InvalidStartPoint | PathFindResult::InvalidEndPoint => {
@@ -282,7 +285,10 @@ where
                             push_vertices(graph, vertices, path, ends, centering_candidates)
                                 .map_err(|_| RoutingError::VertexBufferOverflow)?;
 
-                        assert!(path_len >= 2);
+                        if path_len < 2 {
+                            continue;
+                        }
+
                         let (last, head) = path.nodes().split_last().unwrap();
                         let prev_last = head.last().unwrap();
                         junctions.insert(
