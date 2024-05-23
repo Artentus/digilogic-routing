@@ -1,4 +1,4 @@
-#[derive(Debug)]
+#[derive(Debug, Clone, Copy)]
 pub struct Segment<T> {
     pub start_inclusive: i32,
     pub end_inclusive: i32,
@@ -29,7 +29,7 @@ impl<T> Default for SegmentTree<T> {
     }
 }
 
-impl<T> SegmentTree<T> {
+impl<T: std::fmt::Debug> SegmentTree<T> {
     pub fn build(&mut self, segments: impl IntoIterator<Item = Segment<T>>)
     where
         Segment<T>: Send,
@@ -48,11 +48,11 @@ impl<T> SegmentTree<T> {
             (segment.start_inclusive + self.max_segment_len).cmp(&position)
         }) {
             Ok(mut index) => loop {
-                if index == 0 {
-                    return 0;
-                }
-
                 if (self.segments[index].start_inclusive + self.max_segment_len) >= position {
+                    if index == 0 {
+                        return 0;
+                    }
+
                     index -= 1;
                 } else {
                     return index + 1;
@@ -89,7 +89,7 @@ impl<T> SegmentTree<T> {
         #[cfg(debug_assertions)]
         {
             if let Some(start_segment) = self.segments.get(start_index) {
-                assert!((start_segment.start_inclusive + self.max_segment_len) >= position);
+                assert!((start_segment.start_inclusive + self.max_segment_len) >= position, "start_index: {start_index}\nend_index: {end_index}\nposition: {position}\nsegments: {:#?}", self.segments);
             }
 
             if let Some(before_start_index) = start_index.checked_sub(1) {
@@ -111,5 +111,162 @@ impl<T> SegmentTree<T> {
             .filter(move |segment| segment.end_inclusive >= position)
             .inspect(move |segment| debug_assert!(segment.start_inclusive <= position))
             .map(|segment| &segment.value)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn single_outside_before() {
+        let mut tree = SegmentTree::default();
+        tree.build([Segment {
+            start_inclusive: -10,
+            end_inclusive: 10,
+            value: (),
+        }]);
+        assert_eq!(tree.iter_containing(-11).count(), 0);
+    }
+
+    #[test]
+    fn single_outside_after() {
+        let mut tree = SegmentTree::default();
+        tree.build([Segment {
+            start_inclusive: -10,
+            end_inclusive: 10,
+            value: (),
+        }]);
+        assert_eq!(tree.iter_containing(11).count(), 0);
+    }
+
+    #[test]
+    fn single_inside_at_start() {
+        let mut tree = SegmentTree::default();
+        tree.build([Segment {
+            start_inclusive: -10,
+            end_inclusive: 10,
+            value: (),
+        }]);
+        assert_eq!(tree.iter_containing(-10).count(), 1);
+    }
+
+    #[test]
+    fn single_inside_at_end() {
+        let mut tree = SegmentTree::default();
+        tree.build([Segment {
+            start_inclusive: -10,
+            end_inclusive: 10,
+            value: (),
+        }]);
+        assert_eq!(tree.iter_containing(10).count(), 1);
+    }
+
+    #[test]
+    fn single_inside() {
+        let mut tree = SegmentTree::default();
+        tree.build([Segment {
+            start_inclusive: -10,
+            end_inclusive: 10,
+            value: (),
+        }]);
+        assert_eq!(tree.iter_containing(0).count(), 1);
+    }
+
+    #[test]
+    fn multiple_outside_before() {
+        let mut tree = SegmentTree::default();
+        tree.build(
+            [Segment {
+                start_inclusive: -10,
+                end_inclusive: 10,
+                value: (),
+            }; 100],
+        );
+        assert_eq!(tree.iter_containing(-11).count(), 0);
+    }
+
+    #[test]
+    fn multiple_outside_after() {
+        let mut tree = SegmentTree::default();
+        tree.build(
+            [Segment {
+                start_inclusive: -10,
+                end_inclusive: 10,
+                value: (),
+            }; 100],
+        );
+        assert_eq!(tree.iter_containing(11).count(), 0);
+    }
+
+    #[test]
+    fn multiple_inside_at_start() {
+        let mut tree = SegmentTree::default();
+        tree.build(
+            [Segment {
+                start_inclusive: -10,
+                end_inclusive: 10,
+                value: (),
+            }; 100],
+        );
+        assert_eq!(tree.iter_containing(-10).count(), 100);
+    }
+
+    #[test]
+    fn multiple_inside_at_end() {
+        let mut tree = SegmentTree::default();
+        tree.build(
+            [Segment {
+                start_inclusive: -10,
+                end_inclusive: 10,
+                value: (),
+            }; 100],
+        );
+        assert_eq!(tree.iter_containing(10).count(), 100);
+    }
+
+    #[test]
+    fn multiple_inside() {
+        let mut tree = SegmentTree::default();
+        tree.build(
+            [Segment {
+                start_inclusive: -10,
+                end_inclusive: 10,
+                value: (),
+            }; 100],
+        );
+        assert_eq!(tree.iter_containing(0).count(), 100);
+    }
+
+    #[test]
+    fn mixed() {
+        let mut tree = SegmentTree::default();
+        tree.build([
+            Segment {
+                start_inclusive: -20,
+                end_inclusive: -10,
+                value: (),
+            },
+            Segment {
+                start_inclusive: -10,
+                end_inclusive: 10,
+                value: (),
+            },
+            Segment {
+                start_inclusive: 10,
+                end_inclusive: 20,
+                value: (),
+            },
+        ]);
+
+        assert_eq!(tree.iter_containing(-21).count(), 0);
+        assert_eq!(tree.iter_containing(-11).count(), 1);
+        assert_eq!(tree.iter_containing(-10).count(), 2);
+        assert_eq!(tree.iter_containing(-9).count(), 1);
+        assert_eq!(tree.iter_containing(0).count(), 1);
+        assert_eq!(tree.iter_containing(9).count(), 1);
+        assert_eq!(tree.iter_containing(10).count(), 2);
+        assert_eq!(tree.iter_containing(11).count(), 1);
+        assert_eq!(tree.iter_containing(21).count(), 0);
     }
 }
