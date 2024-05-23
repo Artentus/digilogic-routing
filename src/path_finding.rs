@@ -196,6 +196,10 @@ impl PathFinder {
         visit_all: bool,
     ) -> PathFindResult<&'a Path> {
         let Some(mut start_index) = graph.find_node(start) else {
+            println!(
+                "Start point ({}, {}) does not exist in the graph",
+                start.x, start.y
+            );
             return PathFindResult::InvalidStartPoint;
         };
 
@@ -205,6 +209,10 @@ impl PathFinder {
         let mut total_neighbor_count = 0;
         for end in ends {
             let Some(end_index) = graph.find_node(end) else {
+                println!(
+                    "End point ({}, {}) does not exist in the graph",
+                    end.x, end.y
+                );
                 return PathFindResult::InvalidEndPoint;
             };
 
