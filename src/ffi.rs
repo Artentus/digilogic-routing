@@ -5,6 +5,8 @@ use crate::graph::{NodeIndex, INVALID_NODE_INDEX};
 use crate::routing::{Array, CenteringCandidate};
 use crate::*;
 use rayon::prelude::*;
+use std::ffi::{c_char, CStr};
+use std::fs::File;
 use std::mem::MaybeUninit;
 use std::ops::Range;
 use std::sync::atomic::{AtomicU16, Ordering};
@@ -20,6 +22,7 @@ pub enum Result {
     WireViewBufferOverflowError = 4,
     UninitializedError = 5,
     InvalidArgumentError = 6,
+    IoError = 7,
 }
 
 #[derive(Debug, Clone, Copy)]
@@ -297,6 +300,91 @@ pub unsafe extern "C" fn RT_graph_find_node(
     }
 
     Result::Success
+}
+
+/// Serializes a graph.
+///
+/// **Parameters**  
+/// `graph`: The graph to serialize.  
+/// `file_path`: The file to serialize the graph into.
+///
+/// **Returns**  
+/// `RT_RESULT_SUCCESS`: The operation completed successfully.  
+/// `RT_RESULT_NULL_POINTER_ERROR`: `graph` or `file_path` was `NULL`.  
+/// `RT_RESULT_INVALID_OPERATION_ERROR`: The serialization failed.  
+/// `RT_RESULT_INVALID_ARGUMENT_ERROR`: `file_path` did not contain legal UTF-8.  
+/// `RT_RESULT_IO_ERROR`: An IO error occurred while writing to the file.
+#[no_mangle]
+#[must_use]
+pub unsafe extern "C" fn RT_graph_serialize(
+    graph: *const Graph,
+    file_path: *const c_char,
+) -> Result {
+    if graph.is_null() || file_path.is_null() {
+        return Result::NullPointerError;
+    }
+
+    let graph = unsafe { &*graph };
+    let file_path = unsafe { CStr::from_ptr(file_path) };
+    let Ok(file_path) = file_path.to_str() else {
+        return Result::InvalidArgumentError;
+    };
+
+    let Ok(mut file) = File::create(file_path) else {
+        return Result::IoError;
+    };
+
+    match rmp_serde::encode::write(&mut file, graph) {
+        Ok(_) => Result::Success,
+        Err(rmp_serde::encode::Error::InvalidValueWrite(_)) => Result::IoError,
+        Err(_) => Result::InvalidOperationError,
+    }
+}
+
+/// Deserializes a graph.
+///
+/// **Parameters**  
+/// `[out] graph`: The deserialized graph.  
+/// `file_path`: The file to deserialize the graph from.
+///
+/// **Returns**  
+/// `RT_RESULT_SUCCESS`: The operation completed successfully.  
+/// `RT_RESULT_NULL_POINTER_ERROR`: `graph` or `file_path` was `NULL`.  
+/// `RT_RESULT_INVALID_OPERATION_ERROR`: The deserialization failed.  
+/// `RT_RESULT_INVALID_ARGUMENT_ERROR`: `file_path` did not contain legal UTF-8.  
+/// `RT_RESULT_IO_ERROR`: An IO error occurred while reading from the file.
+#[no_mangle]
+#[must_use]
+pub unsafe extern "C" fn RT_graph_deserialize(
+    graph: *mut *mut Graph,
+    file_path: *const c_char,
+) -> Result {
+    if graph.is_null() || file_path.is_null() {
+        return Result::NullPointerError;
+    }
+
+    let file_path = unsafe { CStr::from_ptr(file_path) };
+    let Ok(file_path) = file_path.to_str() else {
+        return Result::InvalidArgumentError;
+    };
+
+    let Ok(mut file) = File::open(file_path) else {
+        return Result::IoError;
+    };
+
+    match rmp_serde::decode::from_read(&mut file) {
+        Ok(decoded_graph) => {
+            let ptr = Box::into_raw(Box::new(decoded_graph));
+            unsafe {
+                graph.write(ptr);
+            }
+
+            Result::Success
+        }
+        Err(rmp_serde::decode::Error::InvalidDataRead(_))
+        | Err(rmp_serde::decode::Error::InvalidMarkerRead(_)) => Result::IoError,
+        Err(_) => Result::InvalidOperationError,
+    }
 }
 
 /// Frees a graph.

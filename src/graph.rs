@@ -2,6 +2,7 @@ use crate::segment_tree::*;
 use crate::HashMap;
 use bitflags::bitflags;
 use rayon::prelude::*;
+use serde::{Deserialize, Serialize};
 use std::ops::{Index, IndexMut};
 
 pub type NodeIndex = u32;
@@ -9,7 +10,7 @@ pub type NodeIndex = u32;
 pub const INVALID_NODE_INDEX: NodeIndex = u32::MAX;
 pub const INVALID_BOUNDING_BOX_INDEX: BoundingBoxIndex = BoundingBoxIndex(u32::MAX);
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
 #[repr(transparent)]
 pub struct BoundingBoxIndex(u32);
 
@@ -155,7 +156,7 @@ impl Default for Directions {
     }
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
 #[repr(C)]
 pub struct Point {
     /// The X coordinate of the point.
@@ -221,7 +222,7 @@ impl Anchor {
     }
 }
 
-#[derive(Debug, Clone, Copy)]
+#[derive(Debug, Clone, Copy, Serialize, Deserialize)]
 #[repr(C)]
 pub struct BoundingBox {
     /// The center of the bounding box.
@@ -287,7 +288,7 @@ impl BoundingBox {
 }
 
 /// cbindgen:field-names=[pos_x, neg_x, pos_y, neg_y]
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 #[repr(C)]
 pub(crate) struct NeighborList(
     /// The neighbor in the positive X direction, or `RT_INVALID_NODE_INDEX` if none.
@@ -360,7 +361,7 @@ impl IndexMut<Direction> for NeighborList {
     }
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 #[repr(C)]
 pub struct Node {
     /// The position of the node.
@@ -397,7 +398,7 @@ impl Node {
     }
 }
 
-#[derive(Default, Debug)]
+#[derive(Default, Debug, Serialize, Deserialize)]
 #[repr(transparent)]
 pub(crate) struct NodeList(Vec<Node>);
 
@@ -438,21 +439,21 @@ impl IndexMut<NodeIndex> for NodeList {
     }
 }
 
-#[derive(Debug)]
+#[derive(Debug, Serialize, Deserialize)]
 struct HorizontalBoundingBox {
     index: BoundingBoxIndex,
     min_x: i32,
     max_x: i32,
 }
 
-#[derive(Debug)]
+#[derive(Debug, Serialize, Deserialize)]
 struct VerticalBoundingBox {
     index: BoundingBoxIndex,
     min_y: i32,
     max_y: i32,
 }
 
-#[derive(Default)]
+#[derive(Default, Serialize, Deserialize)]
 pub(crate) struct BoundingBoxList {
     bounding_boxes: Vec<BoundingBox>,
     horizontal_bounding_boxes: SegmentTree<HorizontalBoundingBox>,
@@ -862,7 +863,7 @@ fn node_index(
     }
 }
 
-#[derive(Default)]
+#[derive(Default, Serialize, Deserialize)]
 pub(crate) struct GraphData {
     pub(crate) bounding_boxes: BoundingBoxList,
     x_coords: Vec<i32>,

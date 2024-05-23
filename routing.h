@@ -37,6 +37,7 @@ enum RT_Result {
     RT_RESULT_WIRE_VIEW_BUFFER_OVERFLOW_ERROR = 4,
     RT_RESULT_UNINITIALIZED_ERROR = 5,
     RT_RESULT_INVALID_ARGUMENT_ERROR = 6,
+    RT_RESULT_IO_ERROR = 7,
 };
 typedef uint32_t RT_Result;
 
@@ -328,6 +329,38 @@ RT_MUST_USE
 RT_Result RT_graph_find_node(const struct RT_Graph *graph,
                              struct RT_Point position,
                              RT_NodeIndex *node_index);
+
+/**
+ * Serializes a graph.
+ *
+ * **Parameters**
+ * `graph`: The graph to serialize.
+ * `file_path`: The file to serialize the graph into.
+ *
+ * **Returns**
+ * `RT_RESULT_SUCCESS`: The operation completed successfully.
+ * `RT_RESULT_NULL_POINTER_ERROR`: `graph` or `file_path` was `NULL`.
+ * `RT_RESULT_INVALID_OPERATION_ERROR`: The serialization failed.
+ * `RT_RESULT_INVALID_ARGUMENT_ERROR`: `file_path` did not contain legal UTF-8.
+ * `RT_RESULT_IO_ERROR`: An IO error occurred while writing to the file.
+ */
+RT_MUST_USE RT_Result RT_graph_serialize(const struct RT_Graph *graph, const char *file_path);
+
+/**
+ * Deserializes a graph.
+ *
+ * **Parameters**
+ * `[out] graph`: The deserialized graph.
+ * `file_path`: The file to deserialize the graph from.
+ *
+ * **Returns**
+ * `RT_RESULT_SUCCESS`: The operation completed successfully.
+ * `RT_RESULT_NULL_POINTER_ERROR`: `graph` or `file_path` was `NULL`.
+ * `RT_RESULT_INVALID_OPERATION_ERROR`: The deserialization failed.
+ * `RT_RESULT_INVALID_ARGUMENT_ERROR`: `file_path` did not contain legal UTF-8.
+ * `RT_RESULT_IO_ERROR`: An IO error occurred while reading from the file.
+ */
+RT_MUST_USE RT_Result RT_graph_deserialize(struct RT_Graph **graph, const char *file_path);
 
 /**
  * Frees a graph.

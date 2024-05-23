@@ -11,6 +11,7 @@ mod test;
 
 use graph::GraphData;
 use path_finding::PathFinder;
+use serde::{Deserialize, Serialize};
 use std::cell::RefCell;
 use std::mem::MaybeUninit;
 use thread_local::ThreadLocal;
@@ -22,9 +23,10 @@ pub use routing::{NetView, RoutingError, Vertex, WireView};
 type HashSet<T> = ahash::AHashSet<T>;
 type HashMap<K, V> = ahash::AHashMap<K, V>;
 
-#[derive(Default)]
+#[derive(Default, Serialize, Deserialize)]
 pub struct Graph {
     data: GraphData,
+    #[serde(skip)]
     path_finder: ThreadLocal<RefCell<PathFinder>>,
 }
 

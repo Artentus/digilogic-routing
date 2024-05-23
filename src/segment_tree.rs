@@ -1,4 +1,6 @@
-#[derive(Debug, Clone, Copy)]
+use serde::{Deserialize, Serialize};
+
+#[derive(Debug, Clone, Copy, Serialize, Deserialize)]
 pub struct Segment<T> {
     pub start_inclusive: i32,
     pub end_inclusive: i32,
@@ -13,7 +15,7 @@ impl<T> Segment<T> {
     }
 }
 
-#[derive(Debug)]
+#[derive(Debug, Serialize, Deserialize)]
 pub struct SegmentTree<T> {
     segments: Vec<Segment<T>>,
     max_segment_len: i32,
