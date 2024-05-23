@@ -101,7 +101,7 @@ where
 
         for b in iter.clone() {
             let dist = a.manhatten_distance_to(b);
-            if dist > max_dist {
+            if dist >= max_dist {
                 max_dist = dist;
                 max_pair = (a, b);
             }
