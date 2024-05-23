@@ -78,7 +78,7 @@ unsafe impl<T> Sync for MutSlice<T> {}
 impl<T> MutSlice<T> {
     #[inline]
     fn is_null(self) -> bool {
-        self.ptr.is_null()
+        self.ptr.is_null() && (self.len != 0)
     }
 
     #[inline]
