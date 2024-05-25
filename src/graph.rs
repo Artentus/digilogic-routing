@@ -1438,26 +1438,26 @@ impl GraphData {
             ]
         });
 
-        let anchors = anchors.iter().copied().chain(auto_anchors);
+        let all_anchors = anchors.iter().copied().chain(auto_anchors.clone());
 
         // Sort all X coordinates.
         self.x_coords.clear();
         self.x_coords
-            .extend(anchors.clone().map(|anchor| anchor.position.x));
+            .extend(all_anchors.clone().map(|anchor| anchor.position.x));
         self.x_coords.par_sort_unstable();
         self.x_coords.dedup();
 
         // Sort all Y coordinates.
         self.y_coords.clear();
         self.y_coords
-            .extend(anchors.clone().map(|anchor| anchor.position.y));
+            .extend(all_anchors.clone().map(|anchor| anchor.position.y));
         self.y_coords.par_sort_unstable();
         self.y_coords.dedup();
 
         self.node_map.clear();
         self.nodes.clear();
 
-        for anchor in anchors.clone() {
+        for anchor in anchors {
             // Add graph node for this anchor point.
             match self.node_map.entry(anchor.position) {
                 Entry::Occupied(_) => (),
@@ -1468,9 +1468,20 @@ impl GraphData {
             }
         }
 
+        for anchor in auto_anchors {
+            // Add graph node for this anchor point.
+            match self.node_map.entry(anchor.position) {
+                Entry::Occupied(_) => (),
+                Entry::Vacant(entry) => {
+                    let index = self.nodes.push(anchor.position, false);
+                    entry.insert(index);
+                }
+            }
+        }
+
         if minimal {
             // Add dummy nodes for anchors inside bounding boxes.
-            for anchor in anchors.clone() {
+            for anchor in all_anchors.clone() {
                 if anchor.bounding_box == BoundingBoxIndex::INVALID {
                     continue;
                 }
@@ -1479,7 +1490,7 @@ impl GraphData {
             }
         }
 
-        for anchor in anchors {
+        for anchor in all_anchors {
             let anchor_index = self.node_map[&anchor.position];
             self.scan(anchor, anchor_index, minimal);
         }
