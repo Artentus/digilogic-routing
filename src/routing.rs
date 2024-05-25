@@ -417,19 +417,34 @@ fn are_connected_horizontally(
 
 #[derive(Debug, Clone, Copy)]
 enum NudgeOffset {
+    None,
     Horizontal(f32),
     Vertical(f32),
 }
 
 fn center_in_alley(
     graph: &GraphData,
-    node_a: &Node,
-    node_b: &Node,
+    node_a_index: NodeIndex,
+    node_b_index: NodeIndex,
     vertex_index: usize,
     vertices: &mut Array<Vertex>,
     junctions: &HashMap<Point, (usize, Direction)>,
 ) -> NudgeOffset {
+    let node_a = &graph.nodes[node_a_index];
+    let node_b = &graph.nodes[node_b_index];
+
     if node_a.position.x == node_b.position.x {
+        match are_connected_vertically(graph, node_a_index, node_b_index, junctions) {
+            ConnectionKind::Connected {
+                through_junction, ..
+            } => {
+                if through_junction {
+                    return NudgeOffset::None;
+                }
+            }
+            ConnectionKind::Unconnected => panic!("wire segment not connected in graph"),
+        }
+
         let mut min_x = node_a.position.x;
         let mut max_x = node_a.position.x;
         let mut x_min_cap = None;
@@ -529,6 +544,17 @@ fn center_in_alley(
         NudgeOffset::Horizontal(center_x - (node_a.position.x as f32))
     } else {
         assert_eq!(node_a.position.y, node_b.position.y);
+
+        match are_connected_horizontally(graph, node_a_index, node_b_index, junctions) {
+            ConnectionKind::Connected {
+                through_junction, ..
+            } => {
+                if through_junction {
+                    return NudgeOffset::None;
+                }
+            }
+            ConnectionKind::Unconnected => panic!("wire segment not connected in graph"),
+        }
 
         let mut min_y = node_a.position.y;
         let mut max_y = node_a.position.y;
@@ -637,20 +663,21 @@ fn center_wires(
     junctions: &HashMap<Point, (usize, Direction)>,
 ) {
     for centering_candidate in centering_candidates {
-        let node_a = &graph.nodes[centering_candidate.node_a];
-        let node_b = &graph.nodes[centering_candidate.node_b];
-
         let offset = center_in_alley(
             graph,
-            node_a,
-            node_b,
+            centering_candidate.node_a,
+            centering_candidate.node_b,
             centering_candidate.vertex_index as usize,
             vertices,
             junctions,
         );
 
+        let node_a = &graph.nodes[centering_candidate.node_a];
+        let node_b = &graph.nodes[centering_candidate.node_b];
+
         for (&junction_point, &(junction_vertex, junction_dir)) in junctions {
             match offset {
+                NudgeOffset::None => (),
                 NudgeOffset::Horizontal(offset) => {
                     assert_eq!(node_a.position.x, node_b.position.x);
 
