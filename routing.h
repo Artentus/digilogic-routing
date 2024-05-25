@@ -400,6 +400,7 @@ RT_Result RT_graph_connect_nets(const struct RT_Graph *graph,
                                 struct RT_Slice_Waypoint waypoints,
                                 struct RT_MutSlice_Vertex vertices,
                                 struct RT_MutSlice_WireView wire_views,
-                                struct RT_MutSlice_NetView net_views);
+                                struct RT_MutSlice_NetView net_views,
+                                bool perform_centering);
 
 #endif /* ROUTING_H */

@@ -82,6 +82,7 @@ fn test_impl(graph: &Graph, net_points: [Point; 2], expected: &[Vertex]) {
             vertices.as_mut_slice().into(),
             wire_views.as_mut_slice().into(),
             net_views.as_mut_slice().into(),
+            true,
         )
     };
 

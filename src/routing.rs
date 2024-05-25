@@ -773,6 +773,7 @@ pub(crate) fn connect_net<EndpointList, WaypointList>(
     ends: &mut Vec<Point>,
     centering_candidates: &mut Vec<CenteringCandidate>,
     junctions: &mut HashMap<Point, (usize, Direction)>,
+    perform_centering: bool,
 ) -> Result<(), RoutingError>
 where
     EndpointList: Clone + IntoIterator<Item = Point>,
@@ -819,7 +820,9 @@ where
         junctions,
     )?;
 
-    center_wires(&centering_candidates, &graph.data, vertices, junctions);
+    if perform_centering {
+        center_wires(&centering_candidates, &graph.data, vertices, junctions);
+    }
 
     net_view.write(NetView {
         wire_offset,

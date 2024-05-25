@@ -59,6 +59,7 @@ fn route(c: &mut Criterion) {
                             &net.waypoints,
                             &mut vertices,
                             &mut wire_views,
+                            true,
                         )
                         .unwrap(),
                 );

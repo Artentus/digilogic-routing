@@ -564,6 +564,7 @@ pub unsafe extern "C" fn RT_graph_connect_nets(
     vertices: MutSlice<Vertex>,
     wire_views: MutSlice<WireView>,
     mut net_views: MutSlice<NetView>,
+    perform_centering: bool,
 ) -> Result {
     let num_cpus = NUM_CPUS.load(Ordering::Acquire);
     if num_cpus == 0 {
@@ -676,6 +677,7 @@ pub unsafe extern "C" fn RT_graph_connect_nets(
                 ends,
                 centering_candidates,
                 junctions,
+                perform_centering,
             )
         });
 

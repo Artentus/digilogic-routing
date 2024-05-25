@@ -81,6 +81,7 @@ impl Graph {
         waypoints: &[Point],
         vertices: &mut [MaybeUninit<Vertex>],
         wire_views: &mut [MaybeUninit<WireView>],
+        perform_centering: bool,
     ) -> Result<NetView, RoutingError> {
         let mut ends = Vec::new();
         let mut centering_candidates = Vec::new();
@@ -99,6 +100,7 @@ impl Graph {
             &mut ends,
             &mut centering_candidates,
             &mut junctions,
+            perform_centering,
         )?;
 
         #[allow(unsafe_code)]
