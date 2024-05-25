@@ -29,6 +29,9 @@ enum RT_Directions {
 };
 typedef uint8_t RT_Directions;
 
+#define RT_WireView_vertex_count(wire_view) ((wire_view) & 0x7FFF)
+#define RT_WireView_ends_in_junction(wire_view) ((bool)((wire_view) >> 15))
+
 enum RT_Result {
     RT_RESULT_SUCCESS = 0,
     RT_RESULT_NULL_POINTER_ERROR = 1,
@@ -205,15 +208,10 @@ typedef struct RT_MutSlice_Vertex {
     size_t len;
 } RT_MutSlice_Vertex;
 
-typedef struct RT_WireView {
-    /**
-     * The number of vertices in this wire.
-     */
-    uint16_t vertex_count;
-} RT_WireView;
+typedef uint16_t RT_WireView;
 
 typedef struct RT_MutSlice_WireView {
-    struct RT_WireView *ptr;
+    RT_WireView *ptr;
     size_t len;
 } RT_MutSlice_WireView;
 

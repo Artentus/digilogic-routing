@@ -69,10 +69,32 @@ impl From<Point> for Vertex {
 }
 
 #[derive(Debug, Default, Clone, Copy)]
-#[repr(C)]
-pub struct WireView {
+#[repr(transparent)]
+pub struct WireView(u16);
+
+impl WireView {
+    #[inline]
+    pub const fn new(vertex_count: usize, ends_in_junction: bool) -> Option<Self> {
+        if vertex_count > 0x7FFF {
+            return None;
+        }
+
+        Some(Self(
+            (vertex_count as u16) | ((ends_in_junction as u16) << 15),
+        ))
+    }
+
     /// The number of vertices in this wire.
-    pub vertex_count: u16,
+    #[inline]
+    pub const fn vertex_count(self) -> usize {
+        (self.0 & 0x7FFF) as usize
+    }
+
+    /// Wether this wire ends in a junction.
+    #[inline]
+    pub const fn ends_in_junction(self) -> bool {
+        (self.0 >> 15) > 0
+    }
 }
 
 #[derive(Debug, Default, Clone, Copy)]
@@ -127,7 +149,7 @@ fn push_vertices(
     path: &Path,
     ends: &mut Vec<Point>,
     centering_candidates: &mut Vec<CenteringCandidate>,
-) -> Result<u16, ()> {
+) -> Result<usize, ()> {
     ends.reserve(path.nodes().len());
     for node in path.nodes() {
         ends.push(node.position);
@@ -164,14 +186,14 @@ fn push_vertices(
         path_len += 1;
     }
 
-    Ok(path_len.try_into().expect("path too long"))
+    Ok(path_len)
 }
 
 fn push_fallback_vertices(
     points: impl IntoIterator<Item = Point>,
     vertices: &mut Array<Vertex>,
     ends: &mut Vec<Point>,
-) -> Result<u16, ()> {
+) -> Result<usize, ()> {
     let mut path_len = 0usize;
 
     for point in points {
@@ -180,7 +202,7 @@ fn push_fallback_vertices(
         path_len += 1;
     }
 
-    Ok(path_len.try_into().expect("path too long"))
+    Ok(path_len)
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -214,9 +236,7 @@ where
                 None
             } else {
                 wire_views
-                    .push(WireView {
-                        vertex_count: path_len,
-                    })
+                    .push(WireView::new(path_len, false).expect("path too long"))
                     .map_err(|_| RoutingError::WireViewBufferOverflow)?;
 
                 let (last, head) = path.nodes().split_last().unwrap();
@@ -251,9 +271,7 @@ where
     };
 
     wire_views
-        .push(WireView {
-            vertex_count: path_len,
-        })
+        .push(WireView::new(path_len, false).expect("path too long"))
         .map_err(|_| RoutingError::WireViewBufferOverflow)?;
 
     Ok((path_tail.is_some() as u32) + 1)
@@ -308,9 +326,7 @@ where
                 };
 
             wire_views
-                .push(WireView {
-                    vertex_count: path_len,
-                })
+                .push(WireView::new(path_len, true).expect("path too long"))
                 .map_err(|_| RoutingError::WireViewBufferOverflow)?;
 
             wire_count += 1;

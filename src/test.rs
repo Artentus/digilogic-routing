@@ -91,9 +91,9 @@ fn test_impl(graph: &Graph, net_points: [Point; 2], expected: &[Vertex]) {
     assert_eq!(net_view.wire_count, 1);
 
     let wire_view = &wire_views[net_view.wire_offset as usize];
-    assert_eq!(wire_view.vertex_count as usize, expected.len());
+    assert_eq!(wire_view.vertex_count(), expected.len());
 
-    let vertices = &vertices[(net_view.vertex_offset as usize)..(wire_view.vertex_count as usize)];
+    let vertices = &vertices[(net_view.vertex_offset as usize)..wire_view.vertex_count()];
     assert_eq!(vertices, expected);
 }
 

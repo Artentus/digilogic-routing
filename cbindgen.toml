@@ -33,7 +33,10 @@ enum RT_Directions {
     RT_DIRECTIONS_NONE = 0,
     RT_DIRECTIONS_ALL = 15,
 };
-typedef uint8_t RT_Directions;"""
+typedef uint8_t RT_Directions;
+
+#define RT_WireView_vertex_count(wire_view) ((wire_view) & 0x7FFF)
+#define RT_WireView_ends_in_junction(wire_view) ((bool)((wire_view) >> 15))"""
 
 [export]
 prefix = "RT_"
