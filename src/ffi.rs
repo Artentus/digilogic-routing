@@ -5,6 +5,7 @@ use crate::graph::{NodeIndex, INVALID_NODE_INDEX};
 use crate::routing::{Array, CenteringCandidate};
 use crate::*;
 use rayon::prelude::*;
+use serde::{Deserialize, Serialize};
 use std::ffi::{c_char, CStr};
 use std::fs::File;
 use std::mem::MaybeUninit;
@@ -414,7 +415,7 @@ pub type WaypointIndex = u32;
 pub const INVALID_ENDPOINT_INDEX: EndpointIndex = u32::MAX;
 pub const INVALID_WAYPOINT_INDEX: WaypointIndex = u32::MAX;
 
-#[derive(Debug, Clone, Copy)]
+#[derive(Debug, Clone, Copy, Serialize, Deserialize)]
 #[repr(C)]
 pub struct Endpoint {
     /// The position of the endpoint.
@@ -423,7 +424,7 @@ pub struct Endpoint {
     pub next: EndpointIndex,
 }
 
-#[derive(Debug, Clone, Copy)]
+#[derive(Debug, Clone, Copy, Serialize, Deserialize)]
 #[repr(C)]
 pub struct Waypoint {
     /// The position of the waypoint.
@@ -432,7 +433,7 @@ pub struct Waypoint {
     pub next: WaypointIndex,
 }
 
-#[derive(Debug, Clone, Copy)]
+#[derive(Debug, Clone, Copy, Serialize, Deserialize)]
 #[repr(C)]
 pub struct Net {
     /// The first endpoint of the net.
@@ -532,6 +533,74 @@ impl Iterator for WaypointIter<'_> {
         let waypoint = self.waypoints[self.current as usize];
         self.current = waypoint.next;
         Some(waypoint.position)
+    }
+}
+
+#[derive(Serialize, Deserialize)]
+struct GraphConnectNetsQuery {
+    graph: GraphData,
+    nets: Vec<Net>,
+    endpoints: Vec<Endpoint>,
+    waypoints: Vec<Waypoint>,
+    perform_centering: bool,
+}
+
+/// Serializes a query to connect nets in a graph.
+///
+/// **Parameters**  
+/// `graph`: The graph to serialize.  
+/// `nets`: The list of nets to serialize.  
+/// `endpoints`: The list of net endpoints to serialize.  
+/// `waypoints`: The list of net waypoints to serialize.  
+/// `file_path`: The file to serialize the graph into.
+///
+/// **Returns**  
+/// `RT_RESULT_SUCCESS`: The operation completed successfully.  
+/// `RT_RESULT_NULL_POINTER_ERROR`: `graph`, `nets.ptr`, `endpoints.ptr`, `waypoints.ptr` or `file_path` was `NULL`.  
+/// `RT_RESULT_INVALID_OPERATION_ERROR`: The serialization failed.  
+/// `RT_RESULT_INVALID_ARGUMENT_ERROR`: `file_path` did not contain legal UTF-8.  
+/// `RT_RESULT_IO_ERROR`: An IO error occurred while writing to the file.
+#[no_mangle]
+#[must_use]
+pub unsafe extern "C" fn RT_graph_serialize_connect_nets_query(
+    graph: *const Graph,
+    nets: Slice<Net>,
+    endpoints: Slice<Endpoint>,
+    waypoints: Slice<Waypoint>,
+    perform_centering: bool,
+    file_path: *const c_char,
+) -> Result {
+    if graph.is_null()
+        || nets.is_null()
+        || endpoints.is_null()
+        || waypoints.is_null()
+        || file_path.is_null()
+    {
+        return Result::NullPointerError;
+    }
+
+    let graph = unsafe { &*graph };
+    let query = GraphConnectNetsQuery {
+        graph: graph.data.clone(),
+        nets: unsafe { nets.as_ref().to_owned() },
+        endpoints: unsafe { endpoints.as_ref().to_owned() },
+        waypoints: unsafe { waypoints.as_ref().to_owned() },
+        perform_centering,
+    };
+
+    let file_path = unsafe { CStr::from_ptr(file_path) };
+    let Ok(file_path) = file_path.to_str() else {
+        return Result::InvalidArgumentError;
+    };
+
+    let Ok(mut file) = File::create(file_path) else {
+        return Result::IoError;
+    };
+
+    match rmp_serde::encode::write(&mut file, &query) {
+        Ok(_) => Result::Success,
+        Err(rmp_serde::encode::Error::InvalidValueWrite(_)) => Result::IoError,
+        Err(_) => Result::InvalidOperationError,
     }
 }
 

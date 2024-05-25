@@ -398,7 +398,7 @@ impl Node {
     }
 }
 
-#[derive(Default, Debug, Serialize, Deserialize)]
+#[derive(Default, Debug, Clone, Serialize, Deserialize)]
 #[repr(transparent)]
 pub(crate) struct NodeList(Vec<Node>);
 
@@ -439,21 +439,21 @@ impl IndexMut<NodeIndex> for NodeList {
     }
 }
 
-#[derive(Debug, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 struct HorizontalBoundingBox {
     index: BoundingBoxIndex,
     min_x: i32,
     max_x: i32,
 }
 
-#[derive(Debug, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 struct VerticalBoundingBox {
     index: BoundingBoxIndex,
     min_y: i32,
     max_y: i32,
 }
 
-#[derive(Default, Serialize, Deserialize)]
+#[derive(Default, Clone, Serialize, Deserialize)]
 pub(crate) struct BoundingBoxList {
     bounding_boxes: Vec<BoundingBox>,
     horizontal_bounding_boxes: SegmentTree<HorizontalBoundingBox>,
@@ -863,7 +863,7 @@ fn node_index(
     }
 }
 
-#[derive(Default, Serialize, Deserialize)]
+#[derive(Default, Clone, Serialize, Deserialize)]
 pub(crate) struct GraphData {
     pub(crate) bounding_boxes: BoundingBoxList,
     x_coords: Vec<i32>,

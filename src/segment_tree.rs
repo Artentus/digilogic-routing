@@ -15,7 +15,7 @@ impl<T> Segment<T> {
     }
 }
 
-#[derive(Debug, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct SegmentTree<T> {
     segments: Vec<Segment<T>>,
     max_segment_len: i32,

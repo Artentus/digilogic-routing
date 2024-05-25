@@ -373,6 +373,31 @@ RT_MUST_USE RT_Result RT_graph_deserialize(struct RT_Graph **graph, const char *
 RT_MUST_USE RT_Result RT_graph_free(struct RT_Graph *graph);
 
 /**
+ * Serializes a query to connect nets in a graph.
+ *
+ * **Parameters**
+ * `graph`: The graph to serialize.
+ * `nets`: The list of nets to serialize.
+ * `endpoints`: The list of net endpoints to serialize.
+ * `waypoints`: The list of net waypoints to serialize.
+ * `file_path`: The file to serialize the graph into.
+ *
+ * **Returns**
+ * `RT_RESULT_SUCCESS`: The operation completed successfully.
+ * `RT_RESULT_NULL_POINTER_ERROR`: `graph`, `nets.ptr`, `endpoints.ptr`, `waypoints.ptr` or `file_path` was `NULL`.
+ * `RT_RESULT_INVALID_OPERATION_ERROR`: The serialization failed.
+ * `RT_RESULT_INVALID_ARGUMENT_ERROR`: `file_path` did not contain legal UTF-8.
+ * `RT_RESULT_IO_ERROR`: An IO error occurred while writing to the file.
+ */
+RT_MUST_USE
+RT_Result RT_graph_serialize_connect_nets_query(const struct RT_Graph *graph,
+                                                struct RT_Slice_Net nets,
+                                                struct RT_Slice_Endpoint endpoints,
+                                                struct RT_Slice_Waypoint waypoints,
+                                                bool perform_centering,
+                                                const char *file_path);
+
+/**
  * Connects nets in a graph.
  *
  * **Parameters**
