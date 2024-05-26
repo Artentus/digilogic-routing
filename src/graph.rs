@@ -670,96 +670,6 @@ fn find_pos_y_cutoff(
     }
 }
 
-/// Determines whether to include a point as node while scanning horizontally.
-fn include_point_horizontal(
-    point: Point,
-    y_index: usize,
-    y_coords: &[i32],
-    node_map: &HashMap<Point, NodeIndex>,
-    bounding_boxes: &BoundingBoxList,
-) -> bool {
-    if node_map.contains_key(&point) {
-        return true;
-    }
-
-    for y in y_coords[..y_index].iter().copied().rev() {
-        if node_map.contains_key(&Point { x: point.x, y }) {
-            if points_have_vertical_sightline(
-                bounding_boxes.iter_containing_vertical(point.x),
-                y,
-                point.y,
-                BoundingBoxIndex::INVALID,
-            ) {
-                return true;
-            } else {
-                break;
-            }
-        }
-    }
-
-    for y in y_coords[(y_index + 1)..].iter().copied() {
-        if node_map.contains_key(&Point { x: point.x, y }) {
-            if points_have_vertical_sightline(
-                bounding_boxes.iter_containing_vertical(point.x),
-                point.y,
-                y,
-                BoundingBoxIndex::INVALID,
-            ) {
-                return true;
-            } else {
-                break;
-            }
-        }
-    }
-
-    false
-}
-
-/// Determines whether to include a point as node while scanning vertically.
-fn include_point_vertical(
-    point: Point,
-    x_index: usize,
-    x_coords: &[i32],
-    node_map: &HashMap<Point, NodeIndex>,
-    bounding_boxes: &BoundingBoxList,
-) -> bool {
-    if node_map.contains_key(&point) {
-        return true;
-    }
-
-    for x in x_coords[..x_index].iter().copied().rev() {
-        if node_map.contains_key(&Point { x, y: point.y }) {
-            if points_have_horizontal_sightline(
-                bounding_boxes.iter_containing_horizontal(point.y),
-                x,
-                point.x,
-                BoundingBoxIndex::INVALID,
-            ) {
-                return true;
-            } else {
-                break;
-            }
-        }
-    }
-
-    for x in x_coords[(x_index + 1)..].iter().copied() {
-        if node_map.contains_key(&Point { x, y: point.y }) {
-            if points_have_horizontal_sightline(
-                bounding_boxes.iter_containing_horizontal(point.y),
-                point.x,
-                x,
-                BoundingBoxIndex::INVALID,
-            ) {
-                return true;
-            } else {
-                break;
-            }
-        }
-    }
-
-    false
-}
-
 fn node_index(
     node_map: &mut HashMap<Point, NodeIndex>,
     nodes: &mut NodeList,
@@ -787,234 +697,7 @@ pub(crate) struct GraphData {
 }
 
 impl GraphData {
-    fn prescan_neg_x(&mut self, anchor: Anchor, x_index: usize, y_index: usize) {
-        let horizontal_bounding_boxes = self
-            .bounding_boxes
-            .iter_containing_horizontal(anchor.position.y);
-        let bounding_box = self.bounding_boxes.get(anchor.bounding_box);
-        let mut is_in_bounding_box = bounding_box.is_some();
-
-        // Create the first node outside the bounding box.
-        for x in self.x_coords[..x_index].iter().copied().rev() {
-            let current_point = Point {
-                x,
-                y: anchor.position.y,
-            };
-
-            if is_in_bounding_box {
-                if let Some(bounding_box) = bounding_box {
-                    if bounding_box.contains(current_point) {
-                        continue;
-                    } else {
-                        is_in_bounding_box = false;
-                    }
-                }
-            }
-
-            if !points_have_horizontal_sightline(
-                horizontal_bounding_boxes.clone(),
-                x,
-                anchor.position.x,
-                anchor.bounding_box,
-            ) {
-                break;
-            }
-
-            if !include_point_horizontal(
-                current_point,
-                y_index,
-                &self.y_coords,
-                &self.node_map,
-                &self.bounding_boxes,
-            ) {
-                continue;
-            }
-
-            let _ = node_index(&mut self.node_map, &mut self.nodes, current_point);
-            break;
-        }
-    }
-
-    fn prescan_pos_x(&mut self, anchor: Anchor, x_index: usize, y_index: usize) {
-        let horizontal_bounding_boxes = self
-            .bounding_boxes
-            .iter_containing_horizontal(anchor.position.y);
-        let bounding_box = self.bounding_boxes.get(anchor.bounding_box);
-        let mut is_in_bounding_box = bounding_box.is_some();
-
-        // Create the first node outside the bounding box.
-        for x in self.x_coords[(x_index + 1)..].iter().copied() {
-            let current_point = Point {
-                x,
-                y: anchor.position.y,
-            };
-
-            if is_in_bounding_box {
-                if let Some(bounding_box) = bounding_box {
-                    if bounding_box.contains(current_point) {
-                        continue;
-                    } else {
-                        is_in_bounding_box = false;
-                    }
-                }
-            }
-
-            if !points_have_horizontal_sightline(
-                horizontal_bounding_boxes.clone(),
-                anchor.position.x,
-                x,
-                anchor.bounding_box,
-            ) {
-                break;
-            }
-
-            if !include_point_horizontal(
-                current_point,
-                y_index,
-                &self.y_coords,
-                &self.node_map,
-                &self.bounding_boxes,
-            ) {
-                continue;
-            }
-
-            let _ = node_index(&mut self.node_map, &mut self.nodes, current_point);
-            break;
-        }
-    }
-
-    fn prescan_neg_y(&mut self, anchor: Anchor, x_index: usize, y_index: usize) {
-        let vertical_bounding_boxes = self
-            .bounding_boxes
-            .iter_containing_vertical(anchor.position.x);
-        let bounding_box = self.bounding_boxes.get(anchor.bounding_box);
-        let mut is_in_bounding_box = bounding_box.is_some();
-
-        // Create the first node outside the bounding box.
-        for y in self.y_coords[..y_index].iter().copied().rev() {
-            let current_point = Point {
-                x: anchor.position.x,
-                y,
-            };
-
-            if is_in_bounding_box {
-                if let Some(bounding_box) = bounding_box {
-                    if bounding_box.contains(current_point) {
-                        continue;
-                    } else {
-                        is_in_bounding_box = false;
-                    }
-                }
-            }
-
-            if !points_have_vertical_sightline(
-                vertical_bounding_boxes.clone(),
-                y,
-                anchor.position.y,
-                anchor.bounding_box,
-            ) {
-                break;
-            }
-
-            if !include_point_vertical(
-                current_point,
-                x_index,
-                &self.x_coords,
-                &self.node_map,
-                &self.bounding_boxes,
-            ) {
-                continue;
-            }
-
-            let _ = node_index(&mut self.node_map, &mut self.nodes, current_point);
-            break;
-        }
-    }
-
-    fn prescan_pos_y(&mut self, anchor: Anchor, x_index: usize, y_index: usize) {
-        let vertical_bounding_boxes = self
-            .bounding_boxes
-            .iter_containing_vertical(anchor.position.x);
-        let bounding_box = self.bounding_boxes.get(anchor.bounding_box);
-        let mut is_in_bounding_box = bounding_box.is_some();
-
-        // Create the first node outside the bounding box.
-        for y in self.y_coords[(y_index + 1)..].iter().copied() {
-            let current_point = Point {
-                x: anchor.position.x,
-                y,
-            };
-
-            if is_in_bounding_box {
-                if let Some(bounding_box) = bounding_box {
-                    if bounding_box.contains(current_point) {
-                        continue;
-                    } else {
-                        is_in_bounding_box = false;
-                    }
-                }
-            }
-
-            if !points_have_vertical_sightline(
-                vertical_bounding_boxes.clone(),
-                anchor.position.y,
-                y,
-                anchor.bounding_box,
-            ) {
-                break;
-            }
-
-            if !include_point_vertical(
-                current_point,
-                x_index,
-                &self.x_coords,
-                &self.node_map,
-                &self.bounding_boxes,
-            ) {
-                continue;
-            }
-
-            let _ = node_index(&mut self.node_map, &mut self.nodes, current_point);
-            break;
-        }
-    }
-
-    fn prescan(&mut self, anchor: Anchor) {
-        // Determine coordinate indices of this anchor point.
-        let x_index = self
-            .x_coords
-            .binary_search(&anchor.position.x)
-            .expect("invalid anchor point");
-        let y_index = self
-            .y_coords
-            .binary_search(&anchor.position.y)
-            .expect("invalid anchor point");
-
-        if anchor.connect_directions.contains(Directions::NEG_X) {
-            self.prescan_neg_x(anchor, x_index, y_index);
-        }
-
-        if anchor.connect_directions.contains(Directions::POS_X) {
-            self.prescan_pos_x(anchor, x_index, y_index);
-        }
-
-        if anchor.connect_directions.contains(Directions::NEG_Y) {
-            self.prescan_neg_y(anchor, x_index, y_index);
-        }
-
-        if anchor.connect_directions.contains(Directions::POS_Y) {
-            self.prescan_pos_y(anchor, x_index, y_index);
-        }
-    }
-
-    fn scan_neg_x(
-        &mut self,
-        anchor: Anchor,
-        anchor_index: u32,
-        x_index: usize,
-        y_index: usize,
-        minimal: bool,
-    ) {
+    fn scan_neg_x(&mut self, anchor: Anchor, anchor_index: u32, x_index: usize) {
         // Find how far in the negative X direction this anchor point has a sightline to.
         let neg_x_cutoff = find_neg_x_cutoff(
             self.bounding_boxes
@@ -1046,18 +729,6 @@ impl GraphData {
                 }
             }
 
-            if minimal
-                && !include_point_horizontal(
-                    current_point,
-                    y_index,
-                    &self.y_coords,
-                    &self.node_map,
-                    &self.bounding_boxes,
-                )
-            {
-                continue;
-            }
-
             let (current_index, existed) =
                 node_index(&mut self.node_map, &mut self.nodes, current_point);
 
@@ -1074,14 +745,7 @@ impl GraphData {
         }
     }
 
-    fn scan_pos_x(
-        &mut self,
-        anchor: Anchor,
-        anchor_index: u32,
-        x_index: usize,
-        y_index: usize,
-        minimal: bool,
-    ) {
+    fn scan_pos_x(&mut self, anchor: Anchor, anchor_index: u32, x_index: usize) {
         // Find how far in the positive X direction this anchor point has a sightline to.
         let pos_x_cutoff = find_pos_x_cutoff(
             self.bounding_boxes
@@ -1113,18 +777,6 @@ impl GraphData {
                 }
             }
 
-            if minimal
-                && !include_point_horizontal(
-                    current_point,
-                    y_index,
-                    &self.y_coords,
-                    &self.node_map,
-                    &self.bounding_boxes,
-                )
-            {
-                continue;
-            }
-
             let (current_index, existed) =
                 node_index(&mut self.node_map, &mut self.nodes, current_point);
 
@@ -1141,14 +793,7 @@ impl GraphData {
         }
     }
 
-    fn scan_neg_y(
-        &mut self,
-        anchor: Anchor,
-        anchor_index: u32,
-        x_index: usize,
-        y_index: usize,
-        minimal: bool,
-    ) {
+    fn scan_neg_y(&mut self, anchor: Anchor, anchor_index: u32, y_index: usize) {
         // Find how far in the negative Y direction this anchor point has a sightline to.
         let neg_y_cutoff = find_neg_y_cutoff(
             self.bounding_boxes
@@ -1180,18 +825,6 @@ impl GraphData {
                 }
             }
 
-            if minimal
-                && !include_point_vertical(
-                    current_point,
-                    x_index,
-                    &self.x_coords,
-                    &self.node_map,
-                    &self.bounding_boxes,
-                )
-            {
-                continue;
-            }
-
             let (current_index, existed) =
                 node_index(&mut self.node_map, &mut self.nodes, current_point);
 
@@ -1208,14 +841,7 @@ impl GraphData {
         }
     }
 
-    fn scan_pos_y(
-        &mut self,
-        anchor: Anchor,
-        anchor_index: u32,
-        x_index: usize,
-        y_index: usize,
-        minimal: bool,
-    ) {
+    fn scan_pos_y(&mut self, anchor: Anchor, anchor_index: u32, y_index: usize) {
         // Find how far in the positive Y direction this anchor point has a sightline to.
         let pos_y_cutoff = find_pos_y_cutoff(
             self.bounding_boxes
@@ -1247,18 +873,6 @@ impl GraphData {
                 }
             }
 
-            if minimal
-                && !include_point_vertical(
-                    current_point,
-                    x_index,
-                    &self.x_coords,
-                    &self.node_map,
-                    &self.bounding_boxes,
-                )
-            {
-                continue;
-            }
-
             let (current_index, existed) =
                 node_index(&mut self.node_map, &mut self.nodes, current_point);
 
@@ -1275,7 +889,7 @@ impl GraphData {
         }
     }
 
-    fn scan(&mut self, anchor: Anchor, anchor_index: u32, minimal: bool) {
+    fn scan(&mut self, anchor: Anchor, anchor_index: u32) {
         // Determine coordinate indices of this anchor point.
         let x_index = self
             .x_coords
@@ -1287,20 +901,124 @@ impl GraphData {
             .expect("invalid anchor point");
 
         if anchor.connect_directions.contains(Directions::NEG_X) {
-            self.scan_neg_x(anchor, anchor_index, x_index, y_index, minimal);
+            self.scan_neg_x(anchor, anchor_index, x_index);
         }
 
         if anchor.connect_directions.contains(Directions::POS_X) {
-            self.scan_pos_x(anchor, anchor_index, x_index, y_index, minimal);
+            self.scan_pos_x(anchor, anchor_index, x_index);
         }
 
         if anchor.connect_directions.contains(Directions::NEG_Y) {
-            self.scan_neg_y(anchor, anchor_index, x_index, y_index, minimal);
+            self.scan_neg_y(anchor, anchor_index, y_index);
         }
 
         if anchor.connect_directions.contains(Directions::POS_Y) {
-            self.scan_pos_y(anchor, anchor_index, x_index, y_index, minimal);
+            self.scan_pos_y(anchor, anchor_index, y_index);
         }
+    }
+
+    fn remove_redundant_nodes(&mut self) {
+        struct HeadTail<'a> {
+            node_index: usize,
+            head: &'a mut [Node],
+            tail: &'a mut [Node],
+        }
+
+        impl<'a> HeadTail<'a> {
+            #[inline]
+            fn new(nodes: &'a mut [Node], node_index: usize) -> (&'a mut Node, Self) {
+                let (head, tail) = nodes.split_at_mut(node_index);
+                let (node, tail) = tail.split_first_mut().unwrap();
+
+                (
+                    node,
+                    Self {
+                        node_index,
+                        head,
+                        tail,
+                    },
+                )
+            }
+
+            #[inline]
+            fn get_neighbor(&mut self, neighbor_index: NodeIndex) -> &mut Node {
+                use std::cmp::Ordering;
+
+                let neighbor_index = neighbor_index as usize;
+                match neighbor_index.cmp(&self.node_index) {
+                    Ordering::Less => &mut self.head[neighbor_index],
+                    Ordering::Equal => unreachable!("node cannot be its own neighbor"),
+                    Ordering::Greater => &mut self.tail[neighbor_index - self.node_index - 1],
+                }
+            }
+        }
+
+        let nodes = self.nodes.0.as_mut_slice();
+        let mut nodes_len = nodes.len();
+
+        // Remove all nodes that have a "straight through" connection (and aren't anchors).
+        for node_index in (0..nodes_len).rev() {
+            let (node, mut head_tail) = HeadTail::new(&mut nodes[..nodes_len], node_index);
+
+            if !node.is_anchor {
+                let neg_x_neighbor_index = node.neighbors[Direction::NegX];
+                let pos_x_neighbor_index = node.neighbors[Direction::PosX];
+                let neg_y_neighbor_index = node.neighbors[Direction::NegY];
+                let pos_y_neighbor_index = node.neighbors[Direction::PosY];
+
+                let remove = if (neg_x_neighbor_index != INVALID_NODE_INDEX)
+                    && (pos_x_neighbor_index != INVALID_NODE_INDEX)
+                    && (neg_y_neighbor_index == INVALID_NODE_INDEX)
+                    && (pos_y_neighbor_index == INVALID_NODE_INDEX)
+                {
+                    let neg_x_neighbor = head_tail.get_neighbor(neg_x_neighbor_index);
+                    neg_x_neighbor.neighbors[Direction::PosX] = pos_x_neighbor_index;
+
+                    let pos_x_neighbor = head_tail.get_neighbor(pos_x_neighbor_index);
+                    pos_x_neighbor.neighbors[Direction::NegX] = neg_x_neighbor_index;
+
+                    true
+                } else if (neg_x_neighbor_index == INVALID_NODE_INDEX)
+                    && (pos_x_neighbor_index == INVALID_NODE_INDEX)
+                    && (neg_y_neighbor_index != INVALID_NODE_INDEX)
+                    && (pos_y_neighbor_index != INVALID_NODE_INDEX)
+                {
+                    let neg_y_neighbor = head_tail.get_neighbor(neg_y_neighbor_index);
+                    neg_y_neighbor.neighbors[Direction::PosY] = pos_y_neighbor_index;
+
+                    let pos_y_neighbor = head_tail.get_neighbor(pos_y_neighbor_index);
+                    pos_y_neighbor.neighbors[Direction::NegY] = neg_y_neighbor_index;
+
+                    true
+                } else {
+                    false
+                };
+
+                if remove {
+                    nodes_len -= 1;
+                    self.node_map
+                        .remove(&node.position)
+                        .expect("node not in map");
+
+                    if let Some(last) = head_tail.tail.last_mut() {
+                        std::mem::swap(node, last);
+                        self.node_map
+                            .insert(node.position, node_index as NodeIndex)
+                            .expect("swapped node not in map");
+
+                        for dir in Direction::ALL {
+                            let neighbor_index = node.neighbors[dir];
+                            if neighbor_index != INVALID_NODE_INDEX {
+                                let neighbor = head_tail.get_neighbor(neighbor_index);
+                                neighbor.neighbors[dir.opposite()] = node_index as NodeIndex;
+                            }
+                        }
+                    }
+                }
+            }
+        }
+
+        self.nodes.0.truncate(nodes_len);
     }
 
     #[cfg(debug_assertions)]
@@ -1405,23 +1123,17 @@ impl GraphData {
             }
         }
 
-        if minimal {
-            // Add dummy nodes for anchors inside bounding boxes.
-            for anchor in all_anchors.clone() {
-                if anchor.bounding_box == BoundingBoxIndex::INVALID {
-                    continue;
-                }
-
-                self.prescan(anchor);
-            }
-        }
-
         for anchor in all_anchors {
             let anchor_index = self.node_map[&anchor.position];
-            self.scan(anchor, anchor_index, minimal);
+            self.scan(anchor, anchor_index);
         }
 
         self.assert_graph_is_valid();
+
+        if minimal {
+            self.remove_redundant_nodes();
+            self.assert_graph_is_valid();
+        }
     }
 
     /// The nodes in the graph.
