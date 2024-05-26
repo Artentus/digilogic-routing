@@ -452,10 +452,9 @@ fn center_in_alley(
     if node_a.position.x == node_b.position.x {
         match are_connected_vertically(graph, node_a_index, node_b_index, junctions) {
             ConnectionKind::Connected {
-                through_anchor,
-                through_junction,
+                through_junction, ..
             } => {
-                if through_anchor || through_junction {
+                if through_junction {
                     return NudgeOffset::None;
                 }
             }
@@ -564,10 +563,9 @@ fn center_in_alley(
 
         match are_connected_horizontally(graph, node_a_index, node_b_index, junctions) {
             ConnectionKind::Connected {
-                through_anchor,
-                through_junction,
+                through_junction, ..
             } => {
-                if through_anchor || through_junction {
+                if through_junction {
                     return NudgeOffset::None;
                 }
             }
