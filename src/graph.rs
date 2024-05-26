@@ -495,120 +495,69 @@ impl BoundingBoxList {
             .map(|index| self.bounding_boxes[index])
     }
 
-    /// Determines if two horizontally aligned points have a sightline to each other.
-    fn points_have_horizontal_sightline(
-        &self,
-        y: i32,
-        x1: i32,
-        x2: i32,
-        ignore_box: BoundingBoxIndex,
-    ) -> bool {
-        assert!(x1 < x2);
-
-        let fast_result = 'fast: {
-            for bb in self.horizontal_bounding_boxes.iter_containing(y) {
-                if bb.index == ignore_box {
-                    continue;
-                }
-
-                if (x2 < bb.min_x) || (x1 > bb.max_x) {
-                    continue;
-                }
-
-                break 'fast false;
-            }
-
-            true
-        };
-
-        #[cfg(debug_assertions)]
-        {
-            let slow_result = 'slow: {
-                for (i, &bb) in self.bounding_boxes.iter().enumerate() {
-                    if Some(i) == ignore_box.to_usize() {
-                        continue;
-                    }
-
-                    if (y < bb.min_y()) || (y > bb.max_y()) {
-                        continue;
-                    }
-
-                    if (x2 < bb.min_x()) || (x1 > bb.max_x()) {
-                        continue;
-                    }
-
-                    break 'slow false;
-                }
-
-                true
-            };
-
-            assert_eq!(slow_result, fast_result);
-        }
-
-        fast_result
+    #[inline]
+    fn iter_containing_horizontal(&self, y: i32) -> ContainingSegmentIter<HorizontalBoundingBox> {
+        self.horizontal_bounding_boxes.iter_containing(y)
     }
 
-    /// Determines if two vertically aligned points have a sightline to each other.
-    fn points_have_vertical_sightline(
-        &self,
-        x: i32,
-        y1: i32,
-        y2: i32,
-        ignore_box: BoundingBoxIndex,
-    ) -> bool {
-        assert!(y1 < y2);
+    #[inline]
+    fn iter_containing_vertical(&self, x: i32) -> ContainingSegmentIter<VerticalBoundingBox> {
+        self.vertical_bounding_boxes.iter_containing(x)
+    }
+}
 
-        let fast_result = 'fast: {
-            for bb in self.vertical_bounding_boxes.iter_containing(x) {
-                if bb.index == ignore_box {
-                    continue;
-                }
+/// Determines if two horizontally aligned points have a sightline to each other.
+fn points_have_horizontal_sightline(
+    bounding_boxes: ContainingSegmentIter<HorizontalBoundingBox>,
+    x1: i32,
+    x2: i32,
+    ignore_box: BoundingBoxIndex,
+) -> bool {
+    assert!(x1 < x2);
 
-                if (y2 < bb.min_y) || (y1 > bb.max_y) {
-                    continue;
-                }
-
-                break 'fast false;
-            }
-
-            true
-        };
-
-        #[cfg(debug_assertions)]
-        {
-            let slow_result = 'slow: {
-                for (i, &bb) in self.bounding_boxes.iter().enumerate() {
-                    if Some(i) == ignore_box.to_usize() {
-                        continue;
-                    }
-
-                    if (x < bb.min_x()) || (x > bb.max_x()) {
-                        continue;
-                    }
-
-                    if (y2 < bb.min_y()) || (y1 > bb.max_y()) {
-                        continue;
-                    }
-
-                    break 'slow false;
-                }
-
-                true
-            };
-
-            assert_eq!(slow_result, fast_result);
+    for bb in bounding_boxes {
+        if bb.index == ignore_box {
+            continue;
         }
 
-        fast_result
+        if (x2 < bb.min_x) || (x1 > bb.max_x) {
+            continue;
+        }
+
+        return false;
     }
+
+    true
+}
+
+/// Determines if two vertically aligned points have a sightline to each other.
+fn points_have_vertical_sightline(
+    bounding_boxes: ContainingSegmentIter<VerticalBoundingBox>,
+    y1: i32,
+    y2: i32,
+    ignore_box: BoundingBoxIndex,
+) -> bool {
+    assert!(y1 < y2);
+
+    for bb in bounding_boxes {
+        if bb.index == ignore_box {
+            continue;
+        }
+
+        if (y2 < bb.min_y) || (y1 > bb.max_y) {
+            continue;
+        }
+
+        return false;
+    }
+
+    true
 }
 
 /// Finds the last (inclusive) x1 coordinate in the negative direction
 /// that shares a sightline with the given point (x2, y).
 fn find_neg_x_cutoff(
-    bounding_boxes: &BoundingBoxList,
-    y: i32,
+    bounding_boxes: ContainingSegmentIter<HorizontalBoundingBox>,
     x1_coords: &[i32],
     x2: i32,
     offset: usize,
@@ -621,19 +570,11 @@ fn find_neg_x_cutoff(
     let center = x1_coords.len() / 2;
     let x1 = x1_coords[center];
 
-    if bounding_boxes.points_have_horizontal_sightline(y, x1, x2, ignore_box) {
-        find_neg_x_cutoff(
-            bounding_boxes,
-            y,
-            &x1_coords[..center],
-            x2,
-            offset,
-            ignore_box,
-        )
+    if points_have_horizontal_sightline(bounding_boxes.clone(), x1, x2, ignore_box) {
+        find_neg_x_cutoff(bounding_boxes, &x1_coords[..center], x2, offset, ignore_box)
     } else {
         find_neg_x_cutoff(
             bounding_boxes,
-            y,
             &x1_coords[(center + 1)..],
             x2,
             offset + center + 1,
@@ -645,8 +586,7 @@ fn find_neg_x_cutoff(
 /// Finds the last (exclusive) x2 coordinate in the positive direction
 /// that shares a sightline with the given point (x1, y).
 fn find_pos_x_cutoff(
-    bounding_boxes: &BoundingBoxList,
-    y: i32,
+    bounding_boxes: ContainingSegmentIter<HorizontalBoundingBox>,
     x1: i32,
     x2_coords: &[i32],
     offset: usize,
@@ -659,32 +599,23 @@ fn find_pos_x_cutoff(
     let center = x2_coords.len() / 2;
     let x2 = x2_coords[center];
 
-    if bounding_boxes.points_have_horizontal_sightline(y, x1, x2, ignore_box) {
+    if points_have_horizontal_sightline(bounding_boxes.clone(), x1, x2, ignore_box) {
         find_pos_x_cutoff(
             bounding_boxes,
-            y,
             x1,
             &x2_coords[(center + 1)..],
             offset + center + 1,
             ignore_box,
         )
     } else {
-        find_pos_x_cutoff(
-            bounding_boxes,
-            y,
-            x1,
-            &x2_coords[..center],
-            offset,
-            ignore_box,
-        )
+        find_pos_x_cutoff(bounding_boxes, x1, &x2_coords[..center], offset, ignore_box)
     }
 }
 
 /// Finds the last (inclusive) y1 coordinate in the negative direction
 /// that shares a sightline with the given point (x, y2).
 fn find_neg_y_cutoff(
-    bounding_boxes: &BoundingBoxList,
-    x: i32,
+    bounding_boxes: ContainingSegmentIter<VerticalBoundingBox>,
     y1_coords: &[i32],
     y2: i32,
     offset: usize,
@@ -697,19 +628,11 @@ fn find_neg_y_cutoff(
     let center = y1_coords.len() / 2;
     let y1 = y1_coords[center];
 
-    if bounding_boxes.points_have_vertical_sightline(x, y1, y2, ignore_box) {
-        find_neg_y_cutoff(
-            bounding_boxes,
-            x,
-            &y1_coords[..center],
-            y2,
-            offset,
-            ignore_box,
-        )
+    if points_have_vertical_sightline(bounding_boxes.clone(), y1, y2, ignore_box) {
+        find_neg_y_cutoff(bounding_boxes, &y1_coords[..center], y2, offset, ignore_box)
     } else {
         find_neg_y_cutoff(
             bounding_boxes,
-            x,
             &y1_coords[(center + 1)..],
             y2,
             offset + center + 1,
@@ -721,8 +644,7 @@ fn find_neg_y_cutoff(
 /// Finds the last (exclusive) y2 coordinate in the positive direction
 /// that shares a sightline with the given point (x, y1).
 fn find_pos_y_cutoff(
-    bounding_boxes: &BoundingBoxList,
-    x: i32,
+    bounding_boxes: ContainingSegmentIter<VerticalBoundingBox>,
     y1: i32,
     y2_coords: &[i32],
     offset: usize,
@@ -735,24 +657,16 @@ fn find_pos_y_cutoff(
     let center = y2_coords.len() / 2;
     let y2 = y2_coords[center];
 
-    if bounding_boxes.points_have_vertical_sightline(x, y1, y2, ignore_box) {
+    if points_have_vertical_sightline(bounding_boxes.clone(), y1, y2, ignore_box) {
         find_pos_y_cutoff(
             bounding_boxes,
-            x,
             y1,
             &y2_coords[(center + 1)..],
             offset + center + 1,
             ignore_box,
         )
     } else {
-        find_pos_y_cutoff(
-            bounding_boxes,
-            x,
-            y1,
-            &y2_coords[..center],
-            offset,
-            ignore_box,
-        )
+        find_pos_y_cutoff(bounding_boxes, y1, &y2_coords[..center], offset, ignore_box)
     }
 }
 
@@ -770,8 +684,8 @@ fn include_point_horizontal(
 
     for y in y_coords[..y_index].iter().copied().rev() {
         if node_map.contains_key(&Point { x: point.x, y }) {
-            if bounding_boxes.points_have_vertical_sightline(
-                point.x,
+            if points_have_vertical_sightline(
+                bounding_boxes.iter_containing_vertical(point.x),
                 y,
                 point.y,
                 BoundingBoxIndex::INVALID,
@@ -785,8 +699,8 @@ fn include_point_horizontal(
 
     for y in y_coords[(y_index + 1)..].iter().copied() {
         if node_map.contains_key(&Point { x: point.x, y }) {
-            if bounding_boxes.points_have_vertical_sightline(
-                point.x,
+            if points_have_vertical_sightline(
+                bounding_boxes.iter_containing_vertical(point.x),
                 point.y,
                 y,
                 BoundingBoxIndex::INVALID,
@@ -815,8 +729,8 @@ fn include_point_vertical(
 
     for x in x_coords[..x_index].iter().copied().rev() {
         if node_map.contains_key(&Point { x, y: point.y }) {
-            if bounding_boxes.points_have_horizontal_sightline(
-                point.y,
+            if points_have_horizontal_sightline(
+                bounding_boxes.iter_containing_horizontal(point.y),
                 x,
                 point.x,
                 BoundingBoxIndex::INVALID,
@@ -830,8 +744,8 @@ fn include_point_vertical(
 
     for x in x_coords[(x_index + 1)..].iter().copied() {
         if node_map.contains_key(&Point { x, y: point.y }) {
-            if bounding_boxes.points_have_horizontal_sightline(
-                point.y,
+            if points_have_horizontal_sightline(
+                bounding_boxes.iter_containing_horizontal(point.y),
                 point.x,
                 x,
                 BoundingBoxIndex::INVALID,
@@ -874,6 +788,9 @@ pub(crate) struct GraphData {
 
 impl GraphData {
     fn prescan_neg_x(&mut self, anchor: Anchor, x_index: usize, y_index: usize) {
+        let horizontal_bounding_boxes = self
+            .bounding_boxes
+            .iter_containing_horizontal(anchor.position.y);
         let bounding_box = self.bounding_boxes.get(anchor.bounding_box);
         let mut is_in_bounding_box = bounding_box.is_some();
 
@@ -894,8 +811,8 @@ impl GraphData {
                 }
             }
 
-            if !self.bounding_boxes.points_have_horizontal_sightline(
-                anchor.position.y,
+            if !points_have_horizontal_sightline(
+                horizontal_bounding_boxes.clone(),
                 x,
                 anchor.position.x,
                 anchor.bounding_box,
@@ -919,6 +836,9 @@ impl GraphData {
     }
 
     fn prescan_pos_x(&mut self, anchor: Anchor, x_index: usize, y_index: usize) {
+        let horizontal_bounding_boxes = self
+            .bounding_boxes
+            .iter_containing_horizontal(anchor.position.y);
         let bounding_box = self.bounding_boxes.get(anchor.bounding_box);
         let mut is_in_bounding_box = bounding_box.is_some();
 
@@ -939,8 +859,8 @@ impl GraphData {
                 }
             }
 
-            if !self.bounding_boxes.points_have_horizontal_sightline(
-                anchor.position.y,
+            if !points_have_horizontal_sightline(
+                horizontal_bounding_boxes.clone(),
                 anchor.position.x,
                 x,
                 anchor.bounding_box,
@@ -964,6 +884,9 @@ impl GraphData {
     }
 
     fn prescan_neg_y(&mut self, anchor: Anchor, x_index: usize, y_index: usize) {
+        let vertical_bounding_boxes = self
+            .bounding_boxes
+            .iter_containing_vertical(anchor.position.x);
         let bounding_box = self.bounding_boxes.get(anchor.bounding_box);
         let mut is_in_bounding_box = bounding_box.is_some();
 
@@ -984,8 +907,8 @@ impl GraphData {
                 }
             }
 
-            if !self.bounding_boxes.points_have_vertical_sightline(
-                anchor.position.x,
+            if !points_have_vertical_sightline(
+                vertical_bounding_boxes.clone(),
                 y,
                 anchor.position.y,
                 anchor.bounding_box,
@@ -1009,6 +932,9 @@ impl GraphData {
     }
 
     fn prescan_pos_y(&mut self, anchor: Anchor, x_index: usize, y_index: usize) {
+        let vertical_bounding_boxes = self
+            .bounding_boxes
+            .iter_containing_vertical(anchor.position.x);
         let bounding_box = self.bounding_boxes.get(anchor.bounding_box);
         let mut is_in_bounding_box = bounding_box.is_some();
 
@@ -1029,8 +955,8 @@ impl GraphData {
                 }
             }
 
-            if !self.bounding_boxes.points_have_vertical_sightline(
-                anchor.position.x,
+            if !points_have_vertical_sightline(
+                vertical_bounding_boxes.clone(),
                 anchor.position.y,
                 y,
                 anchor.bounding_box,
@@ -1091,8 +1017,8 @@ impl GraphData {
     ) {
         // Find how far in the negative X direction this anchor point has a sightline to.
         let neg_x_cutoff = find_neg_x_cutoff(
-            &self.bounding_boxes,
-            anchor.position.y,
+            self.bounding_boxes
+                .iter_containing_horizontal(anchor.position.y),
             &self.x_coords[..x_index],
             anchor.position.x,
             0,
@@ -1158,8 +1084,8 @@ impl GraphData {
     ) {
         // Find how far in the positive X direction this anchor point has a sightline to.
         let pos_x_cutoff = find_pos_x_cutoff(
-            &self.bounding_boxes,
-            anchor.position.y,
+            self.bounding_boxes
+                .iter_containing_horizontal(anchor.position.y),
             anchor.position.x,
             &self.x_coords[(x_index + 1)..],
             x_index + 1,
@@ -1225,8 +1151,8 @@ impl GraphData {
     ) {
         // Find how far in the negative Y direction this anchor point has a sightline to.
         let neg_y_cutoff = find_neg_y_cutoff(
-            &self.bounding_boxes,
-            anchor.position.x,
+            self.bounding_boxes
+                .iter_containing_vertical(anchor.position.x),
             &self.y_coords[..y_index],
             anchor.position.y,
             0,
@@ -1292,8 +1218,8 @@ impl GraphData {
     ) {
         // Find how far in the positive Y direction this anchor point has a sightline to.
         let pos_y_cutoff = find_pos_y_cutoff(
-            &self.bounding_boxes,
-            anchor.position.x,
+            self.bounding_boxes
+                .iter_containing_vertical(anchor.position.x),
             anchor.position.y,
             &self.y_coords[(y_index + 1)..],
             y_index + 1,

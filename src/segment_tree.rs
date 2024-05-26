@@ -84,7 +84,7 @@ impl<T: std::fmt::Debug> SegmentTree<T> {
         }
     }
 
-    pub fn iter_containing<'a>(&'a self, position: i32) -> impl Iterator<Item = &'a T> {
+    pub fn iter_containing(&self, position: i32) -> ContainingSegmentIter<'_, T> {
         let start_index = self.find_start_index(position);
         let end_index = self.find_end_index(position);
 
@@ -108,11 +108,32 @@ impl<T: std::fmt::Debug> SegmentTree<T> {
             }
         }
 
-        self.segments[start_index..end_index]
-            .iter()
-            .filter(move |segment| segment.end_inclusive >= position)
-            .inspect(move |segment| debug_assert!(segment.start_inclusive <= position))
-            .map(|segment| &segment.value)
+        ContainingSegmentIter {
+            inner: self.segments[start_index..end_index].iter(),
+            position,
+        }
+    }
+}
+
+#[derive(Clone)]
+pub struct ContainingSegmentIter<'a, T> {
+    inner: std::slice::Iter<'a, Segment<T>>,
+    position: i32,
+}
+
+impl<'a, T> Iterator for ContainingSegmentIter<'a, T> {
+    type Item = &'a T;
+
+    fn next(&mut self) -> Option<Self::Item> {
+        while let Some(segment) = self.inner.next() {
+            debug_assert!(segment.start_inclusive <= self.position);
+
+            if segment.end_inclusive >= self.position {
+                return Some(&segment.value);
+            }
+        }
+
+        None
     }
 }
 
