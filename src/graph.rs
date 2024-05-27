@@ -455,16 +455,12 @@ struct VerticalBoundingBox {
 
 #[derive(Default, Clone, Serialize, Deserialize)]
 pub(crate) struct BoundingBoxList {
-    bounding_boxes: Vec<BoundingBox>,
     horizontal_bounding_boxes: SegmentTree<HorizontalBoundingBox>,
     vertical_bounding_boxes: SegmentTree<VerticalBoundingBox>,
 }
 
 impl BoundingBoxList {
     fn build(&mut self, bounding_boxes: &[BoundingBox]) {
-        self.bounding_boxes.clear();
-        self.bounding_boxes.extend_from_slice(bounding_boxes);
-
         self.horizontal_bounding_boxes
             .build(bounding_boxes.iter().enumerate().map(|(i, bb)| Segment {
                 start_inclusive: bb.min_y(),
@@ -486,13 +482,6 @@ impl BoundingBoxList {
                     max_y: bb.max_y(),
                 },
             }));
-    }
-
-    #[inline]
-    fn get(&self, index: BoundingBoxIndex) -> Option<BoundingBox> {
-        usize::try_from(index)
-            .ok()
-            .map(|index| self.bounding_boxes[index])
     }
 
     #[inline]
@@ -708,9 +697,6 @@ impl GraphData {
             anchor.bounding_box,
         );
 
-        let bounding_box = self.bounding_boxes.get(anchor.bounding_box);
-        let mut is_in_bounding_box = bounding_box.is_some();
-
         // Create edges for all nodes between `neg_x_cutoff` and `x_index`.
         let mut prev_index = anchor_index;
         for x in self.x_coords[neg_x_cutoff..x_index].iter().copied().rev() {
@@ -718,16 +704,6 @@ impl GraphData {
                 x,
                 y: anchor.position.y,
             };
-
-            if is_in_bounding_box {
-                if let Some(bounding_box) = bounding_box {
-                    if bounding_box.contains(current_point) {
-                        continue;
-                    } else {
-                        is_in_bounding_box = false;
-                    }
-                }
-            }
 
             let (current_index, existed) =
                 node_index(&mut self.node_map, &mut self.nodes, current_point);
@@ -756,9 +732,6 @@ impl GraphData {
             anchor.bounding_box,
         );
 
-        let bounding_box = self.bounding_boxes.get(anchor.bounding_box);
-        let mut is_in_bounding_box = bounding_box.is_some();
-
         // Create edges for all nodes between `x_index` and `pos_x_cutoff`.
         let mut prev_index = anchor_index;
         for x in self.x_coords[(x_index + 1)..pos_x_cutoff].iter().copied() {
@@ -766,16 +739,6 @@ impl GraphData {
                 x,
                 y: anchor.position.y,
             };
-
-            if is_in_bounding_box {
-                if let Some(bounding_box) = bounding_box {
-                    if bounding_box.contains(current_point) {
-                        continue;
-                    } else {
-                        is_in_bounding_box = false;
-                    }
-                }
-            }
 
             let (current_index, existed) =
                 node_index(&mut self.node_map, &mut self.nodes, current_point);
@@ -804,9 +767,6 @@ impl GraphData {
             anchor.bounding_box,
         );
 
-        let bounding_box = self.bounding_boxes.get(anchor.bounding_box);
-        let mut is_in_bounding_box = bounding_box.is_some();
-
         // Create edges for all nodes between `neg_y_cutoff` and `y_index`.
         let mut prev_index = anchor_index;
         for y in self.y_coords[neg_y_cutoff..y_index].iter().copied().rev() {
@@ -814,16 +774,6 @@ impl GraphData {
                 x: anchor.position.x,
                 y,
             };
-
-            if is_in_bounding_box {
-                if let Some(bounding_box) = bounding_box {
-                    if bounding_box.contains(current_point) {
-                        continue;
-                    } else {
-                        is_in_bounding_box = false;
-                    }
-                }
-            }
 
             let (current_index, existed) =
                 node_index(&mut self.node_map, &mut self.nodes, current_point);
@@ -852,9 +802,6 @@ impl GraphData {
             anchor.bounding_box,
         );
 
-        let bounding_box = self.bounding_boxes.get(anchor.bounding_box);
-        let mut is_in_bounding_box = bounding_box.is_some();
-
         // Create edges for all nodes between `y_index` and `pos_y_cutoff`.
         let mut prev_index = anchor_index;
         for y in self.y_coords[(y_index + 1)..pos_y_cutoff].iter().copied() {
@@ -862,16 +809,6 @@ impl GraphData {
                 x: anchor.position.x,
                 y,
             };
-
-            if is_in_bounding_box {
-                if let Some(bounding_box) = bounding_box {
-                    if bounding_box.contains(current_point) {
-                        continue;
-                    } else {
-                        is_in_bounding_box = false;
-                    }
-                }
-            }
 
             let (current_index, existed) =
                 node_index(&mut self.node_map, &mut self.nodes, current_point);
