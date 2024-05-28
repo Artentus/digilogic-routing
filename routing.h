@@ -133,6 +133,11 @@ typedef struct RT_Node {
      * Whether this node was created from an anchor.
      */
     bool is_anchor;
+    /**
+     * The directions this node is allowed to connect to.
+     * A direction being legal does not mean a neighbor in that direction actually exists.
+     */
+    RT_Directions legal_directions;
 } RT_Node;
 
 typedef struct RT_Slice_Node {

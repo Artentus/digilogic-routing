@@ -126,7 +126,7 @@ impl Direction {
 
 bitflags! {
     /// cbindgen:no-export
-    #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+    #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
     #[repr(transparent)]
     pub struct Directions: u8 {
         const POS_X = 0x1;
@@ -370,6 +370,9 @@ pub struct Node {
     pub(crate) neighbors: NeighborList,
     /// Whether this node was created from an anchor.
     pub is_anchor: bool,
+    /// The directions this node is allowed to connect to.  
+    /// A direction being legal does not mean a neighbor in that direction actually exists.
+    pub legal_directions: Directions,
 }
 
 impl Node {
@@ -409,7 +412,7 @@ impl NodeList {
     }
 
     #[inline]
-    fn push(&mut self, point: Point, is_anchor: bool) -> NodeIndex {
+    fn push(&mut self, point: Point, is_anchor: bool, legal_directions: Directions) -> NodeIndex {
         let index: NodeIndex = self.0.len().try_into().expect("too many nodes");
         assert_ne!(index, INVALID_NODE_INDEX, "too many nodes");
 
@@ -417,6 +420,7 @@ impl NodeList {
             position: point,
             neighbors: NeighborList::new(),
             is_anchor,
+            legal_directions,
         });
 
         index
@@ -659,7 +663,7 @@ fn find_pos_y_cutoff(
     }
 }
 
-fn node_index(
+fn get_or_insert_node(
     node_map: &mut HashMap<Point, NodeIndex>,
     nodes: &mut NodeList,
     point: Point,
@@ -667,9 +671,13 @@ fn node_index(
     use std::collections::hash_map::Entry;
 
     match node_map.entry(point) {
-        Entry::Occupied(entry) => (*entry.get(), true),
+        Entry::Occupied(entry) => {
+            let index = *entry.get();
+            nodes[index].legal_directions = Directions::ALL;
+            (index, true)
+        }
         Entry::Vacant(entry) => {
-            let index = nodes.push(point, false);
+            let index = nodes.push(point, false, Directions::ALL);
             entry.insert(index);
             (index, false)
         }
@@ -714,7 +722,7 @@ fn scan_neg_x(
             y: anchor.position.y,
         };
 
-        let (current_index, existed) = node_index(node_map, nodes, current_point);
+        let (current_index, existed) = get_or_insert_node(node_map, nodes, current_point);
 
         nodes[prev_index].neighbors[Direction::NegX] = current_index;
         nodes[current_index].neighbors[Direction::PosX] = prev_index;
@@ -755,7 +763,7 @@ fn scan_pos_x(
             y: anchor.position.y,
         };
 
-        let (current_index, existed) = node_index(node_map, nodes, current_point);
+        let (current_index, existed) = get_or_insert_node(node_map, nodes, current_point);
 
         nodes[prev_index].neighbors[Direction::PosX] = current_index;
         nodes[current_index].neighbors[Direction::NegX] = prev_index;
@@ -806,7 +814,7 @@ fn scan_neg_y(
             y,
         };
 
-        let (current_index, existed) = node_index(node_map, nodes, current_point);
+        let (current_index, existed) = get_or_insert_node(node_map, nodes, current_point);
 
         nodes[prev_index].neighbors[Direction::NegY] = current_index;
         nodes[current_index].neighbors[Direction::PosY] = prev_index;
@@ -847,7 +855,7 @@ fn scan_pos_y(
             y,
         };
 
-        let (current_index, existed) = node_index(node_map, nodes, current_point);
+        let (current_index, existed) = get_or_insert_node(node_map, nodes, current_point);
 
         nodes[prev_index].neighbors[Direction::PosY] = current_index;
         nodes[current_index].neighbors[Direction::NegY] = prev_index;
@@ -1129,9 +1137,14 @@ impl GraphData {
         for anchor in anchors {
             // Add graph node for this anchor point.
             match self.node_map.entry(anchor.position) {
-                Entry::Occupied(_) => (),
+                Entry::Occupied(entry) => {
+                    let index = *entry.get();
+                    self.nodes[index].legal_directions |= anchor.connect_directions;
+                }
                 Entry::Vacant(entry) => {
-                    let index = self.nodes.push(anchor.position, true);
+                    let index = self
+                        .nodes
+                        .push(anchor.position, true, anchor.connect_directions);
                     entry.insert(index);
                 }
             }
@@ -1140,9 +1153,12 @@ impl GraphData {
         for anchor in auto_anchors {
             // Add graph node for this anchor point.
             match self.node_map.entry(anchor.position) {
-                Entry::Occupied(_) => (),
+                Entry::Occupied(entry) => {
+                    let index = *entry.get();
+                    self.nodes[index].legal_directions = Directions::ALL;
+                }
                 Entry::Vacant(entry) => {
-                    let index = self.nodes.push(anchor.position, false);
+                    let index = self.nodes.push(anchor.position, false, Directions::ALL);
                     entry.insert(index);
                 }
             }

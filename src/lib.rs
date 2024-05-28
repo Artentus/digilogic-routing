@@ -85,7 +85,7 @@ impl Graph {
     ) -> Result<NetView, RoutingError> {
         let mut ends = Vec::new();
         let mut centering_candidates = Vec::new();
-        let mut junctions = HashMap::default();
+        let mut junctions = routing::JunctionMap::default();
         let mut net_view = MaybeUninit::uninit();
 
         routing::connect_net(

@@ -144,9 +144,9 @@ pub(crate) struct CenteringCandidate {
 }
 
 fn push_vertices(
+    path: &Path,
     graph: &GraphData,
     vertices: &mut Array<Vertex>,
-    path: &Path,
     ends: &mut Vec<Point>,
     centering_candidates: &mut Vec<CenteringCandidate>,
 ) -> Result<usize, ()> {
@@ -189,20 +189,69 @@ fn push_vertices(
     Ok(path_len)
 }
 
+fn find_fallback_junction(endpoint: Point, ends: &[Point]) -> Point {
+    let mut min_dist = endpoint.manhatten_distance_to(ends[0]);
+    let mut min_end = ends[0];
+
+    for &end in &ends[1..] {
+        let dist = endpoint.manhatten_distance_to(end);
+        if dist < min_dist {
+            min_dist = dist;
+            min_end = end;
+        }
+    }
+
+    min_end
+}
+
 fn push_fallback_vertices(
-    points: impl IntoIterator<Item = Point>,
+    start: Point,
+    end: Point,
+    start_dirs: Directions,
     vertices: &mut Array<Vertex>,
-    ends: &mut Vec<Point>,
-) -> Result<usize, ()> {
+) -> Result<(usize, Direction), ()> {
     let mut path_len = 0usize;
 
-    for point in points {
-        vertices.push(point.into())?;
-        ends.push(point);
+    vertices.push(start.into())?;
+    path_len += 1;
+
+    let (middle, dir) = if start_dirs.intersects(Directions::X) {
+        let middle = Point {
+            x: end.x,
+            y: start.y,
+        };
+
+        let dir = if end.y < start.y {
+            Direction::NegY
+        } else {
+            Direction::PosY
+        };
+
+        (middle, dir)
+    } else {
+        let middle = Point {
+            x: end.x,
+            y: start.y,
+        };
+
+        let dir = if end.x < start.x {
+            Direction::NegX
+        } else {
+            Direction::PosX
+        };
+
+        (middle, dir)
+    };
+
+    if (middle != start) && (middle != end) {
+        vertices.push(middle.into())?;
         path_len += 1;
     }
 
-    Ok(path_len)
+    vertices.push(end.into())?;
+    path_len += 1;
+
+    Ok((path_len, dir))
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -227,54 +276,163 @@ fn route_root_wire<I>(
 where
     I: IntoIterator<Item = Point>,
 {
-    let path_tail = match path_finder.find_path(graph, root_start, None, waypoints, true) {
-        PathFindResult::Found(path) => {
-            let path_len = push_vertices(graph, vertices, path, ends, centering_candidates)
+    let mut wire_count = 0;
+
+    let (last_waypoint, last_waypoint_dir) =
+        match path_finder.find_path(graph, root_start, None, waypoints, true) {
+            PathFindResult::Found(path) => {
+                let path_len = push_vertices(path, graph, vertices, ends, centering_candidates)
+                    .map_err(|_| RoutingError::VertexBufferOverflow)?;
+
+                if path_len < 2 {
+                    (root_start, None)
+                } else {
+                    wire_views
+                        .push(WireView::new(path_len, false).expect("path too long"))
+                        .map_err(|_| RoutingError::WireViewBufferOverflow)?;
+
+                    let (last, head) = path.nodes().split_last().unwrap();
+                    let prev_last = head.last().unwrap();
+
+                    wire_count += 1;
+                    (last.position, prev_last.bend_direction)
+                }
+            }
+            PathFindResult::NotFound => {
+                ends.push(root_start);
+                (root_start, None)
+            }
+            PathFindResult::InvalidStartPoint | PathFindResult::InvalidEndPoint => {
+                return Err(RoutingError::InvalidPoint);
+            }
+        };
+
+    let path_len =
+        match path_finder.find_path(graph, last_waypoint, last_waypoint_dir, [root_end], false) {
+            PathFindResult::Found(path) => {
+                push_vertices(path, graph, vertices, ends, centering_candidates)
+                    .map_err(|_| RoutingError::VertexBufferOverflow)?
+            }
+            PathFindResult::NotFound => {
+                let root_end_node = &graph.nodes[graph.find_node(root_end).unwrap()];
+                let (path_len, _) = push_fallback_vertices(
+                    root_end,
+                    last_waypoint,
+                    root_end_node.legal_directions,
+                    vertices,
+                )
                 .map_err(|_| RoutingError::VertexBufferOverflow)?;
 
-            if path_len < 2 {
-                None
-            } else {
-                wire_views
-                    .push(WireView::new(path_len, false).expect("path too long"))
-                    .map_err(|_| RoutingError::WireViewBufferOverflow)?;
+                assert!(path_len > 2);
+                ends.push(root_end);
 
-                let (last, head) = path.nodes().split_last().unwrap();
-                let prev_last = head.last().unwrap();
-
-                Some((last.position, prev_last.bend_direction))
+                path_len
             }
-        }
-        PathFindResult::NotFound => None,
-        PathFindResult::InvalidStartPoint | PathFindResult::InvalidEndPoint => {
-            return Err(RoutingError::InvalidPoint);
-        }
-    };
-
-    let start = path_tail.map(|(last, _)| last).unwrap_or(root_start);
-    let path_len = match path_finder.find_path(
-        graph,
-        start,
-        path_tail.and_then(|(_, dir)| dir),
-        [root_end],
-        false,
-    ) {
-        PathFindResult::Found(path) => {
-            push_vertices(graph, vertices, path, ends, centering_candidates)
-                .map_err(|_| RoutingError::VertexBufferOverflow)?
-        }
-        PathFindResult::NotFound => push_fallback_vertices([start, root_end], vertices, ends)
-            .map_err(|_| RoutingError::VertexBufferOverflow)?,
-        PathFindResult::InvalidStartPoint | PathFindResult::InvalidEndPoint => {
-            return Err(RoutingError::InvalidPoint);
-        }
-    };
+            PathFindResult::InvalidStartPoint | PathFindResult::InvalidEndPoint => {
+                return Err(RoutingError::InvalidPoint);
+            }
+        };
 
     wire_views
         .push(WireView::new(path_len, false).expect("path too long"))
         .map_err(|_| RoutingError::WireViewBufferOverflow)?;
 
-    Ok((path_tail.is_some() as u32) + 1)
+    Ok(wire_count + 1)
+}
+
+#[derive(Debug, Clone)]
+pub(crate) enum JunctionKind {
+    // A junction already has 2 connections from the root, so at most 2 other connections can be made.
+    Single {
+        vertex_index: usize,
+        inbound_dir: Direction,
+    },
+    Double {
+        vertex_index: [usize; 2],
+        inbound_dir: [Direction; 2],
+    },
+    /// The junction is in a state the centering algorithm cannot deal with, so ignore it.
+    Degenerate,
+}
+
+impl JunctionKind {
+    fn iter(&self) -> impl Iterator<Item = (usize, Direction)> {
+        enum Iter {
+            Single(Option<(usize, Direction)>),
+            Double([Option<(usize, Direction)>; 2]),
+            Degenerate,
+        }
+
+        impl Iterator for Iter {
+            type Item = (usize, Direction);
+
+            fn next(&mut self) -> Option<Self::Item> {
+                match self {
+                    Iter::Single(opt) => opt.take(),
+                    Iter::Double([opt1, opt2]) => opt1.take().or_else(|| opt2.take()),
+                    Iter::Degenerate => None,
+                }
+            }
+        }
+
+        match self {
+            &JunctionKind::Single {
+                vertex_index,
+                inbound_dir,
+            } => Iter::Single(Some((vertex_index, inbound_dir))),
+            JunctionKind::Double {
+                vertex_index,
+                inbound_dir,
+            } => Iter::Double([
+                Some((vertex_index[0], inbound_dir[0])),
+                Some((vertex_index[1], inbound_dir[1])),
+            ]),
+            JunctionKind::Degenerate => Iter::Degenerate,
+        }
+    }
+}
+
+pub(crate) type JunctionMap = HashMap<Point, JunctionKind>;
+
+fn insert_junction(
+    junctions: &mut JunctionMap,
+    position: Point,
+    vertex_index: usize,
+    inbound_dir: Direction,
+) {
+    use std::collections::hash_map::Entry;
+
+    match junctions.entry(position) {
+        Entry::Vacant(entry) => {
+            entry.insert(JunctionKind::Single {
+                vertex_index,
+                inbound_dir,
+            });
+        }
+        Entry::Occupied(mut entry) => {
+            let kind = entry.get_mut();
+
+            match *kind {
+                JunctionKind::Single {
+                    vertex_index: prev_vertex_index,
+                    inbound_dir: prev_inbound_dir,
+                } => {
+                    *kind = JunctionKind::Double {
+                        vertex_index: [prev_vertex_index, vertex_index],
+                        inbound_dir: [prev_inbound_dir, inbound_dir],
+                    };
+                }
+                JunctionKind::Double { .. } => {
+                    // With normal routing this is impossible, because it requires routing
+                    // on top of an existing wire that should have been connected to instead.
+                    // However if a wire cannot be routed it ignores geometry so there is
+                    // a small chance for it to happen.
+                    *kind = JunctionKind::Degenerate;
+                }
+                JunctionKind::Degenerate => (),
+            }
+        }
+    }
 }
 
 fn route_branch_wires<I>(
@@ -287,7 +445,7 @@ fn route_branch_wires<I>(
     wire_views: &mut Array<WireView>,
     ends: &mut Vec<Point>,
     centering_candidates: &mut Vec<CenteringCandidate>,
-    junctions: &mut HashMap<Point, (usize, Direction)>,
+    junctions: &mut JunctionMap,
 ) -> Result<u32, RoutingError>
 where
     I: IntoIterator<Item = Point>,
@@ -300,7 +458,7 @@ where
                 match path_finder.find_path(graph, endpoint, None, ends.iter().copied(), false) {
                     PathFindResult::Found(path) => {
                         let path_len =
-                            push_vertices(graph, vertices, path, ends, centering_candidates)
+                            push_vertices(path, graph, vertices, ends, centering_candidates)
                                 .map_err(|_| RoutingError::VertexBufferOverflow)?;
 
                         if path_len < 2 {
@@ -309,16 +467,31 @@ where
 
                         let (last, head) = path.nodes().split_last().unwrap();
                         let prev_last = head.last().unwrap();
-                        junctions.insert(
+                        insert_junction(
+                            junctions,
                             last.position,
-                            (vertices.len - 1, prev_last.bend_direction.unwrap()),
+                            vertices.len - 1,
+                            prev_last.bend_direction.unwrap(),
                         );
 
                         path_len
                     }
                     PathFindResult::NotFound => {
-                        push_fallback_vertices([endpoint, root_start], vertices, ends)
-                            .map_err(|_| RoutingError::VertexBufferOverflow)?
+                        let junction_pos = find_fallback_junction(endpoint, ends);
+                        let endpoint_node = &graph.nodes[graph.find_node(endpoint).unwrap()];
+                        let (path_len, junction_dir) = push_fallback_vertices(
+                            endpoint,
+                            junction_pos,
+                            endpoint_node.legal_directions,
+                            vertices,
+                        )
+                        .map_err(|_| RoutingError::VertexBufferOverflow)?;
+
+                        assert!(path_len > 2);
+                        insert_junction(junctions, junction_pos, vertices.len - 1, junction_dir);
+                        ends.push(endpoint);
+
+                        path_len
                     }
                     PathFindResult::InvalidStartPoint | PathFindResult::InvalidEndPoint => {
                         return Err(RoutingError::InvalidPoint);
@@ -349,7 +522,7 @@ fn are_connected_vertically(
     graph: &GraphData,
     mut a: NodeIndex,
     b: NodeIndex,
-    junctions: &HashMap<Point, (usize, Direction)>,
+    junctions: &JunctionMap,
 ) -> ConnectionKind {
     let node_a = &graph.nodes[a];
     let node_b = &graph.nodes[b];
@@ -378,8 +551,13 @@ fn are_connected_vertically(
         if node.is_anchor {
             through_anchor = true;
         }
-        if junctions.contains_key(&node.position) {
-            through_junction = true;
+        match junctions.get(&node.position) {
+            Some(JunctionKind::Degenerate) => {
+                through_anchor = true;
+                through_junction = true;
+            }
+            Some(_) => through_junction = true,
+            _ => (),
         }
 
         a = node.neighbors[dir];
@@ -392,7 +570,7 @@ fn are_connected_horizontally(
     graph: &GraphData,
     mut a: NodeIndex,
     b: NodeIndex,
-    junctions: &HashMap<Point, (usize, Direction)>,
+    junctions: &JunctionMap,
 ) -> ConnectionKind {
     let node_a = &graph.nodes[a];
     let node_b = &graph.nodes[b];
@@ -421,8 +599,13 @@ fn are_connected_horizontally(
         if node.is_anchor {
             through_anchor = true;
         }
-        if junctions.contains_key(&node.position) {
-            through_junction = true;
+        match junctions.get(&node.position) {
+            Some(JunctionKind::Degenerate) => {
+                through_anchor = true;
+                through_junction = true;
+            }
+            Some(_) => through_junction = true,
+            _ => (),
         }
 
         a = node.neighbors[dir];
@@ -444,7 +627,7 @@ fn center_in_alley(
     node_b_index: NodeIndex,
     vertex_index: usize,
     vertices: &mut Array<Vertex>,
-    junctions: &HashMap<Point, (usize, Direction)>,
+    junctions: &JunctionMap,
 ) -> NudgeOffset {
     let node_a = &graph.nodes[node_a_index];
     let node_b = &graph.nodes[node_b_index];
@@ -676,7 +859,7 @@ fn center_wires(
     centering_candidates: &[CenteringCandidate],
     graph: &GraphData,
     vertices: &mut Array<Vertex>,
-    junctions: &HashMap<Point, (usize, Direction)>,
+    junctions: &JunctionMap,
 ) {
     for centering_candidate in centering_candidates {
         let offset = center_in_alley(
@@ -688,69 +871,77 @@ fn center_wires(
             junctions,
         );
 
+        if matches!(offset, NudgeOffset::None) {
+            continue;
+        }
+
         let node_a = &graph.nodes[centering_candidate.node_a];
         let node_b = &graph.nodes[centering_candidate.node_b];
 
-        for (&junction_point, &(junction_vertex, junction_dir)) in junctions {
-            match offset {
-                NudgeOffset::None => (),
-                NudgeOffset::Horizontal(offset) => {
-                    assert_eq!(node_a.position.x, node_b.position.x);
+        for (&junction_point, junction_kind) in junctions {
+            for (junction_vertex, junction_dir) in junction_kind.iter() {
+                let junction_vertex = junction_vertex as usize;
 
-                    let min_y = node_a.position.y.min(node_b.position.y);
-                    let max_y = node_a.position.y.max(node_b.position.y);
+                match offset {
+                    NudgeOffset::None => unreachable!(),
+                    NudgeOffset::Horizontal(offset) => {
+                        assert_eq!(node_a.position.x, node_b.position.x);
 
-                    if (junction_point.x == node_a.position.x)
-                        && matches!(junction_dir, Direction::NegX | Direction::PosX)
-                    {
-                        if (junction_point.y >= min_y) && (junction_point.y <= max_y) {
-                            vertices[junction_vertex].x += offset;
+                        let min_y = node_a.position.y.min(node_b.position.y);
+                        let max_y = node_a.position.y.max(node_b.position.y);
+
+                        if (junction_point.x == node_a.position.x)
+                            && matches!(junction_dir, Direction::NegX | Direction::PosX)
+                        {
+                            if (junction_point.y >= min_y) && (junction_point.y <= max_y) {
+                                vertices[junction_vertex].x += offset;
+                            }
+                        }
+
+                        if junction_point.x == (node_a.position.x + (offset as i32)) {
+                            match junction_dir {
+                                Direction::PosY => {
+                                    if junction_point.y == max_y {
+                                        vertices[junction_vertex].y = min_y as f32;
+                                    }
+                                }
+                                Direction::NegY => {
+                                    if junction_point.y == min_y {
+                                        vertices[junction_vertex].y = max_y as f32;
+                                    }
+                                }
+                                _ => (),
+                            }
                         }
                     }
+                    NudgeOffset::Vertical(offset) => {
+                        assert_eq!(node_a.position.y, node_b.position.y);
 
-                    if junction_point.x == (node_a.position.x + (offset as i32)) {
-                        match junction_dir {
-                            Direction::PosY => {
-                                if junction_point.y == max_y {
-                                    vertices[junction_vertex].y = min_y as f32;
-                                }
+                        let min_x = node_a.position.x.min(node_b.position.x);
+                        let max_x = node_a.position.x.max(node_b.position.x);
+
+                        if (junction_point.y == node_a.position.y)
+                            && matches!(junction_dir, Direction::NegY | Direction::PosY)
+                        {
+                            if (junction_point.x >= min_x) && (junction_point.x <= max_x) {
+                                vertices[junction_vertex].y += offset;
                             }
-                            Direction::NegY => {
-                                if junction_point.y == min_y {
-                                    vertices[junction_vertex].y = max_y as f32;
-                                }
-                            }
-                            _ => (),
                         }
-                    }
-                }
-                NudgeOffset::Vertical(offset) => {
-                    assert_eq!(node_a.position.y, node_b.position.y);
 
-                    let min_x = node_a.position.x.min(node_b.position.x);
-                    let max_x = node_a.position.x.max(node_b.position.x);
-
-                    if (junction_point.y == node_a.position.y)
-                        && matches!(junction_dir, Direction::NegY | Direction::PosY)
-                    {
-                        if (junction_point.x >= min_x) && (junction_point.x <= max_x) {
-                            vertices[junction_vertex].y += offset;
-                        }
-                    }
-
-                    if junction_point.y == (node_a.position.y + (offset as i32)) {
-                        match junction_dir {
-                            Direction::PosX => {
-                                if junction_point.x == max_x {
-                                    vertices[junction_vertex].x = min_x as f32;
+                        if junction_point.y == (node_a.position.y + (offset as i32)) {
+                            match junction_dir {
+                                Direction::PosX => {
+                                    if junction_point.x == max_x {
+                                        vertices[junction_vertex].x = min_x as f32;
+                                    }
                                 }
-                            }
-                            Direction::NegX => {
-                                if junction_point.x == min_x {
-                                    vertices[junction_vertex].x = max_x as f32;
+                                Direction::NegX => {
+                                    if junction_point.x == min_x {
+                                        vertices[junction_vertex].x = max_x as f32;
+                                    }
                                 }
+                                _ => (),
                             }
-                            _ => (),
                         }
                     }
                 }
@@ -770,7 +961,7 @@ pub(crate) fn connect_net<EndpointList, WaypointList>(
     net_view: &mut MaybeUninit<NetView>,
     ends: &mut Vec<Point>,
     centering_candidates: &mut Vec<CenteringCandidate>,
-    junctions: &mut HashMap<Point, (usize, Direction)>,
+    junctions: &mut JunctionMap,
     perform_centering: bool,
 ) -> Result<(), RoutingError>
 where
