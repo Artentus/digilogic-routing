@@ -323,7 +323,7 @@ where
                 )
                 .map_err(|_| RoutingError::VertexBufferOverflow)?;
 
-                assert!(path_len > 2);
+                assert!(path_len >= 2);
                 ends.push(root_end);
 
                 path_len
@@ -487,7 +487,7 @@ where
                         )
                         .map_err(|_| RoutingError::VertexBufferOverflow)?;
 
-                        assert!(path_len > 2);
+                        assert!(path_len >= 2);
                         insert_junction(junctions, junction_pos, vertices.len - 1, junction_dir);
                         ends.push(endpoint);
 
