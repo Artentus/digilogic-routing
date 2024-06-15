@@ -4,6 +4,7 @@ version = "0.1.0"
 edition = "2021"
 authors = ["Mathis Rech"]
 license = "Apache-2.0"
+rust = "1.79"
 
 [lib]
 crate-type = ["rlib", "staticlib"]

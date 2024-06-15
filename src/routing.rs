@@ -1,5 +1,6 @@
 use crate::graph::{NodeIndex, INVALID_NODE_INDEX};
 use crate::*;
+use std::borrow::Borrow;
 use std::mem::MaybeUninit;
 use std::ops::{Deref, DerefMut};
 
@@ -108,33 +109,33 @@ pub struct NetView {
     pub vertex_offset: u32,
 }
 
-fn pick_root_path<I>(endpoints: I) -> Result<(Point, Point), ()>
+fn pick_root_path<EndpointList, WaypointList, WaypointListRef>(
+    mut endpoints: EndpointList,
+) -> Result<(Endpoint<WaypointList>, Endpoint<WaypointList>), ()>
 where
-    I: IntoIterator<Item = Point>,
-    I::IntoIter: Clone,
+    WaypointListRef: ?Sized,
+    for<'a> &'a WaypointListRef: IntoIterator<Item: Borrow<Point>>,
+    WaypointList: Clone + Borrow<WaypointListRef>,
+    EndpointList: Clone + Iterator<Item: Borrow<Endpoint<WaypointList>>>,
 {
     let mut max_dist = 0;
-    let mut max_pair = (Point::ZERO, Point::ZERO);
+    let mut max_pair: Option<(Endpoint<WaypointList>, Endpoint<WaypointList>)> = None;
 
-    let mut count = 0;
-    let mut iter = endpoints.into_iter();
-    while let Some(a) = iter.next() {
-        count += 1;
+    while let Some(a) = endpoints.next() {
+        let a = a.borrow();
 
-        for b in iter.clone() {
-            let dist = a.manhatten_distance_to(b);
+        for b in endpoints.clone() {
+            let b = b.borrow();
+
+            let dist = a.position.manhatten_distance_to(b.position);
             if dist >= max_dist {
                 max_dist = dist;
-                max_pair = (a, b);
+                max_pair = Some((a.clone(), b.clone()));
             }
         }
     }
 
-    if count < 2 {
-        Err(())
-    } else {
-        Ok(max_pair)
-    }
+    max_pair.ok_or(())
 }
 
 pub(crate) struct CenteringCandidate {
@@ -262,30 +263,37 @@ pub enum RoutingError {
     InvalidPoint,
 }
 
-fn route_root_wire<I>(
+fn route_root_wire<WaypointList, WaypointListRef>(
     graph: &GraphData,
     path_finder: &mut PathFinder,
-    waypoints: I,
-    root_start: Point,
-    root_end: Point,
+    root_start: Endpoint<WaypointList>,
+    root_end: Endpoint<WaypointList>,
     vertices: &mut Array<Vertex>,
     wire_views: &mut Array<WireView>,
     ends: &mut Vec<Point>,
     centering_candidates: &mut Vec<CenteringCandidate>,
 ) -> Result<u32, RoutingError>
 where
-    I: IntoIterator<Item = Point>,
+    WaypointListRef: ?Sized,
+    for<'a> &'a WaypointListRef: IntoIterator<Item: Borrow<Point>>,
+    WaypointList: Borrow<WaypointListRef>,
 {
     let mut wire_count = 0;
 
+    let waypoints = root_start
+        .waypoints
+        .borrow()
+        .into_iter()
+        .chain(root_end.waypoints.borrow());
+
     let (last_waypoint, last_waypoint_dir) =
-        match path_finder.find_path(graph, root_start, None, waypoints, true) {
+        match path_finder.find_path(graph, root_start.position, None, waypoints, true) {
             PathFindResult::Found(path) => {
                 let path_len = push_vertices(path, graph, vertices, ends, centering_candidates)
                     .map_err(|_| RoutingError::VertexBufferOverflow)?;
 
                 if path_len < 2 {
-                    (root_start, None)
+                    (root_start.position, None)
                 } else {
                     wire_views
                         .push(WireView::new(path_len, false).expect("path too long"))
@@ -299,39 +307,44 @@ where
                 }
             }
             PathFindResult::NotFound => {
-                ends.push(root_start);
-                (root_start, None)
+                ends.push(root_start.position);
+                (root_start.position, None)
             }
             PathFindResult::InvalidStartPoint | PathFindResult::InvalidEndPoint => {
                 return Err(RoutingError::InvalidPoint);
             }
         };
 
-    let path_len =
-        match path_finder.find_path(graph, last_waypoint, last_waypoint_dir, [root_end], false) {
-            PathFindResult::Found(path) => {
-                push_vertices(path, graph, vertices, ends, centering_candidates)
-                    .map_err(|_| RoutingError::VertexBufferOverflow)?
-            }
-            PathFindResult::NotFound => {
-                let root_end_node = &graph.nodes[graph.find_node(root_end).unwrap()];
-                let (path_len, _) = push_fallback_vertices(
-                    root_end,
-                    last_waypoint,
-                    root_end_node.legal_directions,
-                    vertices,
-                )
-                .map_err(|_| RoutingError::VertexBufferOverflow)?;
+    let path_len = match path_finder.find_path(
+        graph,
+        last_waypoint,
+        last_waypoint_dir,
+        [root_end.position],
+        false,
+    ) {
+        PathFindResult::Found(path) => {
+            push_vertices(path, graph, vertices, ends, centering_candidates)
+                .map_err(|_| RoutingError::VertexBufferOverflow)?
+        }
+        PathFindResult::NotFound => {
+            let root_end_node = &graph.nodes[graph.find_node(root_end.position).unwrap()];
+            let (path_len, _) = push_fallback_vertices(
+                root_end.position,
+                last_waypoint,
+                root_end_node.legal_directions,
+                vertices,
+            )
+            .map_err(|_| RoutingError::VertexBufferOverflow)?;
 
-                assert!(path_len >= 2);
-                ends.push(root_end);
+            assert!(path_len >= 2);
+            ends.push(root_end.position);
 
-                path_len
-            }
-            PathFindResult::InvalidStartPoint | PathFindResult::InvalidEndPoint => {
-                return Err(RoutingError::InvalidPoint);
-            }
-        };
+            path_len
+        }
+        PathFindResult::InvalidStartPoint | PathFindResult::InvalidEndPoint => {
+            return Err(RoutingError::InvalidPoint);
+        }
+    };
 
     wire_views
         .push(WireView::new(path_len, false).expect("path too long"))
@@ -435,12 +448,12 @@ fn insert_junction(
     }
 }
 
-fn route_branch_wires<I>(
+fn route_branch_wires<EndpointList, WaypointList, WaypointListRef>(
     graph: &GraphData,
     path_finder: &mut PathFinder,
-    endpoints: I,
-    root_start: Point,
-    root_end: Point,
+    endpoints: EndpointList,
+    root_start: Endpoint<WaypointList>,
+    root_end: Endpoint<WaypointList>,
     vertices: &mut Array<Vertex>,
     wire_views: &mut Array<WireView>,
     ends: &mut Vec<Point>,
@@ -448,55 +461,95 @@ fn route_branch_wires<I>(
     junctions: &mut JunctionMap,
 ) -> Result<u32, RoutingError>
 where
-    I: IntoIterator<Item = Point>,
+    WaypointListRef: ?Sized,
+    for<'a> &'a WaypointListRef: IntoIterator<Item: Borrow<Point>>,
+    WaypointList: Borrow<WaypointListRef>,
+    EndpointList: Clone + Iterator<Item: Borrow<Endpoint<WaypointList>>>,
 {
     let mut wire_count = 0;
 
     for endpoint in endpoints {
-        if (endpoint != root_start) && (endpoint != root_end) {
-            let path_len =
-                match path_finder.find_path(graph, endpoint, None, ends.iter().copied(), false) {
-                    PathFindResult::Found(path) => {
-                        let path_len =
-                            push_vertices(path, graph, vertices, ends, centering_candidates)
-                                .map_err(|_| RoutingError::VertexBufferOverflow)?;
+        let endpoint = endpoint.borrow();
 
-                        if path_len < 2 {
-                            continue;
-                        }
+        if (endpoint.position != root_start.position) && (endpoint.position != root_end.position) {
+            let (last_waypoint, last_waypoint_dir) = match path_finder.find_path(
+                graph,
+                endpoint.position,
+                None,
+                endpoint.waypoints.borrow(),
+                true,
+            ) {
+                PathFindResult::Found(path) => {
+                    let path_len = push_vertices(path, graph, vertices, ends, centering_candidates)
+                        .map_err(|_| RoutingError::VertexBufferOverflow)?;
+
+                    if path_len < 2 {
+                        (endpoint.position, None)
+                    } else {
+                        wire_views
+                            .push(WireView::new(path_len, false).expect("path too long"))
+                            .map_err(|_| RoutingError::WireViewBufferOverflow)?;
 
                         let (last, head) = path.nodes().split_last().unwrap();
                         let prev_last = head.last().unwrap();
-                        insert_junction(
-                            junctions,
-                            last.position,
-                            vertices.len - 1,
-                            prev_last.bend_direction.unwrap(),
-                        );
 
-                        path_len
+                        wire_count += 1;
+                        (last.position, prev_last.bend_direction)
                     }
-                    PathFindResult::NotFound => {
-                        let junction_pos = find_fallback_junction(endpoint, ends);
-                        let endpoint_node = &graph.nodes[graph.find_node(endpoint).unwrap()];
-                        let (path_len, junction_dir) = push_fallback_vertices(
-                            endpoint,
-                            junction_pos,
-                            endpoint_node.legal_directions,
-                            vertices,
-                        )
+                }
+                PathFindResult::NotFound => (endpoint.position, None),
+                PathFindResult::InvalidStartPoint | PathFindResult::InvalidEndPoint => {
+                    return Err(RoutingError::InvalidPoint);
+                }
+            };
+
+            let path_len = match path_finder.find_path(
+                graph,
+                last_waypoint,
+                last_waypoint_dir,
+                ends.iter().copied(),
+                false,
+            ) {
+                PathFindResult::Found(path) => {
+                    let path_len = push_vertices(path, graph, vertices, ends, centering_candidates)
                         .map_err(|_| RoutingError::VertexBufferOverflow)?;
 
-                        assert!(path_len >= 2);
-                        insert_junction(junctions, junction_pos, vertices.len - 1, junction_dir);
-                        ends.push(endpoint);
+                    if path_len < 2 {
+                        continue;
+                    }
 
-                        path_len
-                    }
-                    PathFindResult::InvalidStartPoint | PathFindResult::InvalidEndPoint => {
-                        return Err(RoutingError::InvalidPoint);
-                    }
-                };
+                    let (last, head) = path.nodes().split_last().unwrap();
+                    let prev_last = head.last().unwrap();
+                    insert_junction(
+                        junctions,
+                        last.position,
+                        vertices.len - 1,
+                        prev_last.bend_direction.unwrap(),
+                    );
+
+                    path_len
+                }
+                PathFindResult::NotFound => {
+                    let junction_pos = find_fallback_junction(endpoint.position, ends);
+                    let endpoint_node = &graph.nodes[graph.find_node(endpoint.position).unwrap()];
+                    let (path_len, junction_dir) = push_fallback_vertices(
+                        endpoint.position,
+                        junction_pos,
+                        endpoint_node.legal_directions,
+                        vertices,
+                    )
+                    .map_err(|_| RoutingError::VertexBufferOverflow)?;
+
+                    assert!(path_len >= 2);
+                    insert_junction(junctions, junction_pos, vertices.len - 1, junction_dir);
+                    ends.push(endpoint.position);
+
+                    path_len
+                }
+                PathFindResult::InvalidStartPoint | PathFindResult::InvalidEndPoint => {
+                    return Err(RoutingError::InvalidPoint);
+                }
+            };
 
             wire_views
                 .push(WireView::new(path_len, true).expect("path too long"))
@@ -950,10 +1003,15 @@ fn center_wires(
     }
 }
 
-pub(crate) fn connect_net<EndpointList, WaypointList>(
+#[derive(Debug, Clone)]
+pub struct Endpoint<WaypointList> {
+    pub position: Point,
+    pub waypoints: WaypointList,
+}
+
+pub(crate) fn connect_net<EndpointList, WaypointList, WaypointListRef>(
     graph: &Graph,
     endpoints: EndpointList,
-    waypoints: WaypointList,
     vertex_base_offset: usize,
     wire_base_offset: usize,
     vertices: &mut Array<Vertex>,
@@ -965,9 +1023,10 @@ pub(crate) fn connect_net<EndpointList, WaypointList>(
     perform_centering: bool,
 ) -> Result<(), RoutingError>
 where
-    EndpointList: Clone + IntoIterator<Item = Point>,
-    EndpointList::IntoIter: Clone,
-    WaypointList: IntoIterator<Item = Point>,
+    WaypointListRef: ?Sized,
+    for<'a> &'a WaypointListRef: IntoIterator<Item: Borrow<Point>>,
+    WaypointList: Clone + Borrow<WaypointListRef>,
+    EndpointList: Clone + Iterator<Item: Borrow<Endpoint<WaypointList>>>,
 {
     let path_finder = &mut *graph.path_finder.get_or_default().borrow_mut();
     let (root_start, root_end) =
@@ -987,9 +1046,8 @@ where
     let root_wire_count = route_root_wire(
         &graph.data,
         path_finder,
-        waypoints,
-        root_start,
-        root_end,
+        root_start.clone(),
+        root_end.clone(),
         vertices,
         wire_views,
         ends,

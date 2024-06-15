@@ -147,17 +147,11 @@ typedef struct RT_Slice_Node {
 
 typedef uint32_t RT_EndpointIndex;
 
-typedef uint32_t RT_WaypointIndex;
-
 typedef struct RT_Net {
     /**
      * The first endpoint of the net.
      */
     RT_EndpointIndex first_endpoint;
-    /**
-     * The first waypoint of the net, or `RT_INVALID_WAYPOINT_INDEX` if none.
-     */
-    RT_WaypointIndex first_waypoint;
 } RT_Net;
 
 typedef struct RT_Slice_Net {
@@ -165,11 +159,17 @@ typedef struct RT_Slice_Net {
     size_t len;
 } RT_Slice_Net;
 
+typedef uint32_t RT_WaypointIndex;
+
 typedef struct RT_Endpoint {
     /**
      * The position of the endpoint.
      */
     struct RT_Point position;
+    /**
+     * The first waypoint associated with this endpoint, or `RT_INVALID_WAYPOINT_INDEX` if none.
+     */
+    RT_WaypointIndex first_waypoint;
     /**
      * The next endpoint in the net, or `RT_INVALID_ENDPOINT_INDEX` if none.
      */

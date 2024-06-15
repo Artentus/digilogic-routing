@@ -1,5 +1,6 @@
 use crate::graph::{Direction, GraphData, NodeIndex, Point, INVALID_NODE_INDEX};
 use crate::{HashMap, HashSet};
+use std::borrow::Borrow;
 use std::cmp::Reverse;
 
 type PriorityQueue<I, P> = priority_queue::PriorityQueue<I, P, ahash::RandomState>;
@@ -192,7 +193,7 @@ impl PathFinder {
         graph: &GraphData,
         start: Point,
         start_straight_dir: Option<Direction>,
-        ends: impl IntoIterator<Item = Point>,
+        ends: impl IntoIterator<Item: Borrow<Point>>,
         visit_all: bool,
     ) -> PathFindResult<&'a Path> {
         let Some(mut start_index) = graph.find_node(start) else {
@@ -208,6 +209,8 @@ impl PathFinder {
 
         let mut total_neighbor_count = 0;
         for end in ends {
+            let end = *end.borrow();
+
             let Some(end_index) = graph.find_node(end) else {
                 println!(
                     "End point ({}, {}) does not exist in the graph",

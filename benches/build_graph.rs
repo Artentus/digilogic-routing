@@ -20,8 +20,25 @@ fn build_graph(c: &mut Criterion) {
 
 #[derive(Default)]
 struct Net {
-    endpoints: Vec<Point>,
-    waypoints: Vec<Point>,
+    endpoints: Vec<digilogic_routing::Endpoint<Vec<Point>>>,
+}
+
+fn find_closest_endpoint(
+    waypoint: Point,
+    endpoints: &[digilogic_routing::Endpoint<Vec<Point>>],
+) -> usize {
+    let mut min_dist = 0;
+    let mut min_index = 0;
+
+    for (i, endpoint) in endpoints.iter().enumerate() {
+        let dist = waypoint.manhatten_distance_to(endpoint.position);
+        if dist <= min_dist {
+            min_dist = dist;
+            min_index = i;
+        }
+    }
+
+    min_index
 }
 
 fn create_nets() -> Vec<Net> {
@@ -32,20 +49,30 @@ fn create_nets() -> Vec<Net> {
             nets.resize_with(endpoint.net_id + 1, || Net::default());
         }
 
-        nets[endpoint.net_id].endpoints.push(endpoint.position);
+        nets[endpoint.net_id]
+            .endpoints
+            .push(digilogic_routing::Endpoint {
+                position: endpoint.position,
+                waypoints: Vec::new(),
+            });
     }
 
     for waypoint in WAYPOINTS {
-        nets[waypoint.net_id].waypoints.push(waypoint.position);
+        let closest_endpoint =
+            find_closest_endpoint(waypoint.position, &nets[waypoint.net_id].endpoints);
+
+        nets[waypoint.net_id].endpoints[closest_endpoint]
+            .waypoints
+            .push(waypoint.position);
     }
 
     nets
 }
 
 fn route(c: &mut Criterion) {
-    let mut graph = black_box(Graph::default());
-    black_box(graph.build(ANCHORS, BOUNDING_BOXES, true));
-    let nets = black_box(create_nets());
+    let mut graph = Graph::default();
+    graph.build(ANCHORS, BOUNDING_BOXES, true);
+    let nets = create_nets();
 
     c.bench_function("route", |b| {
         b.iter(|| {
@@ -54,9 +81,8 @@ fn route(c: &mut Criterion) {
                 let mut wire_views = [MaybeUninit::uninit(); 32];
                 black_box(
                     graph
-                        .connect_net(
+                        .connect_net::<[Point]>(
                             &net.endpoints,
-                            &net.waypoints,
                             &mut vertices,
                             &mut wire_views,
                             true,

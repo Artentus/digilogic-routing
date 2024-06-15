@@ -53,18 +53,17 @@ impl<'a, T> From<&'a mut [T]> for MutSlice<T> {
 fn test_impl(graph: &Graph, net_points: [Point; 2], expected: &[Vertex]) {
     let thread_count = init();
 
-    let nets = [Net {
-        first_endpoint: 0,
-        first_waypoint: INVALID_WAYPOINT_INDEX,
-    }];
+    let nets = [Net { first_endpoint: 0 }];
 
     let endpoints = [
-        Endpoint {
+        ffi::Endpoint {
             position: net_points[0],
+            first_waypoint: INVALID_WAYPOINT_INDEX,
             next: 1,
         },
-        Endpoint {
+        ffi::Endpoint {
             position: net_points[1],
+            first_waypoint: INVALID_WAYPOINT_INDEX,
             next: INVALID_ENDPOINT_INDEX,
         },
     ];

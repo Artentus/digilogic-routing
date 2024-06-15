@@ -420,6 +420,8 @@ pub const INVALID_WAYPOINT_INDEX: WaypointIndex = u32::MAX;
 pub struct Endpoint {
     /// The position of the endpoint.
     pub position: Point,
+    /// The first waypoint associated with this endpoint, or `RT_INVALID_WAYPOINT_INDEX` if none.
+    pub first_waypoint: WaypointIndex,
     /// The next endpoint in the net, or `RT_INVALID_ENDPOINT_INDEX` if none.
     pub next: EndpointIndex,
 }
@@ -438,44 +440,49 @@ pub struct Waypoint {
 pub struct Net {
     /// The first endpoint of the net.
     pub first_endpoint: EndpointIndex,
-    /// The first waypoint of the net, or `RT_INVALID_WAYPOINT_INDEX` if none.
-    pub first_waypoint: WaypointIndex,
 }
 
 #[derive(Clone, Copy)]
 struct EndpointList<'a> {
     endpoints: &'a [Endpoint],
+    waypoints: &'a [Waypoint],
     first: EndpointIndex,
 }
 
 impl<'a> EndpointList<'a> {
     #[inline]
-    fn new(endpoints: &'a [Endpoint], first: EndpointIndex) -> Self {
-        Self { endpoints, first }
+    fn new(endpoints: &'a [Endpoint], waypoints: &'a [Waypoint], first: EndpointIndex) -> Self {
+        Self {
+            endpoints,
+            waypoints,
+            first,
+        }
     }
 }
 
 #[derive(Clone)]
 struct EndpointIter<'a> {
     endpoints: &'a [Endpoint],
+    waypoints: &'a [Waypoint],
     current: EndpointIndex,
 }
 
 impl<'a> IntoIterator for EndpointList<'a> {
-    type Item = Point;
+    type Item = routing::Endpoint<WaypointList<'a>>;
     type IntoIter = EndpointIter<'a>;
 
     #[inline]
     fn into_iter(self) -> Self::IntoIter {
         EndpointIter {
             endpoints: self.endpoints,
+            waypoints: self.waypoints,
             current: self.first,
         }
     }
 }
 
-impl Iterator for EndpointIter<'_> {
-    type Item = Point;
+impl<'a> Iterator for EndpointIter<'a> {
+    type Item = routing::Endpoint<WaypointList<'a>>;
 
     #[inline]
     fn next(&mut self) -> Option<Self::Item> {
@@ -485,7 +492,10 @@ impl Iterator for EndpointIter<'_> {
 
         let endpoint = self.endpoints[self.current as usize];
         self.current = endpoint.next;
-        Some(endpoint.position)
+        Some(routing::Endpoint {
+            position: endpoint.position,
+            waypoints: WaypointList::new(self.waypoints, endpoint.first_waypoint),
+        })
     }
 }
 
@@ -508,7 +518,7 @@ struct WaypointIter<'a> {
     current: WaypointIndex,
 }
 
-impl<'a> IntoIterator for WaypointList<'a> {
+impl<'a> IntoIterator for &'_ WaypointList<'a> {
     type Item = Point;
     type IntoIter = WaypointIter<'a>;
 
@@ -731,13 +741,11 @@ pub unsafe extern "C" fn RT_graph_connect_nets(
                 junctions,
             } = &mut *threadlocal_data.mutable.borrow_mut();
 
-            let endpoints = EndpointList::new(endpoints, net.first_endpoint);
-            let waypoints = WaypointList::new(waypoints, net.first_waypoint);
+            let endpoints = EndpointList::new(endpoints, waypoints, net.first_endpoint).into_iter();
 
-            routing::connect_net(
+            routing::connect_net::<_, _, WaypointList>(
                 graph,
                 endpoints,
-                waypoints,
                 vertex_base_offset,
                 wire_base_offset,
                 vertices,

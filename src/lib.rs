@@ -12,13 +12,14 @@ mod test;
 use graph::GraphData;
 use path_finding::PathFinder;
 use serde::{Deserialize, Serialize};
+use std::borrow::Borrow;
 use std::cell::RefCell;
 use std::mem::MaybeUninit;
 use thread_local::ThreadLocal;
 
 pub use graph::{Anchor, BoundingBox, BoundingBoxIndex, Direction, Directions, Node, Point};
 pub use path_finding::{Path, PathFindResult, PathNode, PathNodeKind};
-pub use routing::{NetView, RoutingError, Vertex, WireView};
+pub use routing::{Endpoint, NetView, RoutingError, Vertex, WireView};
 
 type HashSet<T> = ahash::AHashSet<T>;
 type HashMap<K, V> = ahash::AHashMap<K, V>;
@@ -75,14 +76,16 @@ impl Graph {
     }
 
     #[inline]
-    pub fn connect_net(
+    pub fn connect_net<WaypointList: ?Sized>(
         &self,
-        endpoints: &[Point],
-        waypoints: &[Point],
+        endpoints: &[Endpoint<impl Clone + Borrow<WaypointList>>],
         vertices: &mut [MaybeUninit<Vertex>],
         wire_views: &mut [MaybeUninit<WireView>],
         perform_centering: bool,
-    ) -> Result<NetView, RoutingError> {
+    ) -> Result<NetView, RoutingError>
+    where
+        for<'a> &'a WaypointList: IntoIterator<Item: Borrow<Point>>,
+    {
         let mut ends = Vec::new();
         let mut centering_candidates = Vec::new();
         let mut junctions = routing::JunctionMap::default();
@@ -90,8 +93,7 @@ impl Graph {
 
         routing::connect_net(
             self,
-            endpoints.iter().copied(),
-            waypoints.iter().copied(),
+            endpoints.into_iter(),
             0,
             0,
             &mut vertices.into(),
