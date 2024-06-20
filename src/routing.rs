@@ -330,6 +330,11 @@ where
                 .map_err(|_| RoutingError::VertexBufferOverflow)?
         }
         PathFindResult::NotFound => {
+            println!(
+                "no path between ({}, {}) and ({}, {}) found, generating fallback wire",
+                last_waypoint.x, last_waypoint.y, root_end.position.x, root_end.position.y
+            );
+
             let root_end_node = &graph.nodes[graph.find_node(root_end.position).unwrap()];
             let (path_len, _) = push_fallback_vertices(
                 root_end.position,
@@ -534,6 +539,11 @@ where
                     path_len
                 }
                 PathFindResult::NotFound => {
+                    println!(
+                        "no path between ({}, {}) and root net found, generating fallback wire",
+                        last_waypoint.x, last_waypoint.y
+                    );
+
                     let junction_pos = find_fallback_junction(endpoint.position, ends);
                     let endpoint_node = &graph.nodes[graph.find_node(endpoint.position).unwrap()];
                     let (path_len, junction_dir) = push_fallback_vertices(
