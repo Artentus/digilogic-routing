@@ -306,10 +306,7 @@ where
                     (last.position, prev_last.bend_direction)
                 }
             }
-            PathFindResult::NotFound => {
-                ends.push(root_start.position);
-                (root_start.position, None)
-            }
+            PathFindResult::NotFound => (root_start.position, None),
             PathFindResult::InvalidStartPoint | PathFindResult::InvalidEndPoint => {
                 return Err(RoutingError::InvalidPoint);
             }
@@ -471,6 +468,7 @@ where
     for endpoint in endpoints {
         let endpoint = endpoint.borrow();
 
+        let end_count = ends.len();
         if (endpoint.position != root_start.position) && (endpoint.position != root_end.position) {
             let (last_waypoint, last_waypoint_dir) = match path_finder.find_path(
                 graph,
@@ -507,7 +505,7 @@ where
                 graph,
                 last_waypoint,
                 last_waypoint_dir,
-                ends.iter().copied(),
+                ends[..end_count].iter().copied(),
                 false,
             ) {
                 PathFindResult::Found(path) => {
