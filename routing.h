@@ -29,8 +29,9 @@ enum RT_Directions {
 };
 typedef uint8_t RT_Directions;
 
-#define RT_WireView_vertex_count(wire_view) ((wire_view) & 0x7FFF)
-#define RT_WireView_ends_in_junction(wire_view) ((bool)((wire_view) >> 15))
+#define RT_WireView_vertex_count(wire_view) ((wire_view) & 0x3FFF)
+#define RT_WireView_ends_in_junction(wire_view) ((bool)(((wire_view) >> 15) & 0x1))
+#define RT_WireView_is_root(wire_view) ((bool)(((wire_view) >> 14) & 0x1))
 
 enum RT_Result {
     RT_RESULT_SUCCESS = 0,

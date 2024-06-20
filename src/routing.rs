@@ -75,26 +75,32 @@ pub struct WireView(u16);
 
 impl WireView {
     #[inline]
-    pub const fn new(vertex_count: usize, ends_in_junction: bool) -> Option<Self> {
-        if vertex_count > 0x7FFF {
+    pub const fn new(vertex_count: usize, ends_in_junction: bool, is_root: bool) -> Option<Self> {
+        if vertex_count > 0x3FFF {
             return None;
         }
 
         Some(Self(
-            (vertex_count as u16) | ((ends_in_junction as u16) << 15),
+            (vertex_count as u16) | ((ends_in_junction as u16) << 15) | ((is_root as u16) << 14),
         ))
     }
 
     /// The number of vertices in this wire.
     #[inline]
     pub const fn vertex_count(self) -> usize {
-        (self.0 & 0x7FFF) as usize
+        (self.0 & 0x3FFF) as usize
     }
 
     /// Wether this wire ends in a junction.
     #[inline]
     pub const fn ends_in_junction(self) -> bool {
-        (self.0 >> 15) > 0
+        ((self.0 >> 15) & 0x1) > 0
+    }
+
+    /// Wether this wire is a root wire.
+    #[inline]
+    pub const fn is_root(self) -> bool {
+        ((self.0 >> 14) & 0x1) > 0
     }
 }
 
@@ -296,7 +302,7 @@ where
                     (root_start.position, None)
                 } else {
                     wire_views
-                        .push(WireView::new(path_len, false).expect("path too long"))
+                        .push(WireView::new(path_len, false, true).expect("path too long"))
                         .map_err(|_| RoutingError::WireViewBufferOverflow)?;
 
                     let (last, head) = path.nodes().split_last().unwrap();
@@ -344,7 +350,7 @@ where
     };
 
     wire_views
-        .push(WireView::new(path_len, false).expect("path too long"))
+        .push(WireView::new(path_len, false, true).expect("path too long"))
         .map_err(|_| RoutingError::WireViewBufferOverflow)?;
 
     Ok(wire_count + 1)
@@ -485,7 +491,7 @@ where
                         (endpoint.position, None)
                     } else {
                         wire_views
-                            .push(WireView::new(path_len, false).expect("path too long"))
+                            .push(WireView::new(path_len, false, false).expect("path too long"))
                             .map_err(|_| RoutingError::WireViewBufferOverflow)?;
 
                         let (last, head) = path.nodes().split_last().unwrap();
@@ -550,7 +556,7 @@ where
             };
 
             wire_views
-                .push(WireView::new(path_len, true).expect("path too long"))
+                .push(WireView::new(path_len, true, false).expect("path too long"))
                 .map_err(|_| RoutingError::WireViewBufferOverflow)?;
 
             wire_count += 1;
