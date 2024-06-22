@@ -103,6 +103,11 @@ impl WireView {
     pub const fn is_root(self) -> bool {
         ((self.0 >> 14) & 0x1) > 0
     }
+
+    #[inline]
+    fn set_ends_in_junction(&mut self) {
+        self.0 |= 1 << 15;
+    }
 }
 
 #[derive(Debug, Default, Clone, Copy)]
@@ -514,6 +519,10 @@ fn route_branch_wires<'a>(
                         .map_err(|_| RoutingError::VertexBufferOverflow)?;
 
                     if path_len < 2 {
+                        if last_waypoint_dir.is_some() {
+                            wire_views.last_mut().unwrap().set_ends_in_junction();
+                        }
+
                         continue;
                     }
 
