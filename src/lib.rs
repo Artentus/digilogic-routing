@@ -12,7 +12,6 @@ mod test;
 use graph::GraphData;
 use path_finding::PathFinder;
 use serde::{Deserialize, Serialize};
-use std::borrow::Borrow;
 use std::cell::RefCell;
 use std::mem::MaybeUninit;
 use thread_local::ThreadLocal;
@@ -78,14 +77,11 @@ impl Graph {
     #[inline]
     pub fn connect_net<WaypointList: ?Sized>(
         &self,
-        endpoints: &[Endpoint<impl Clone + Borrow<WaypointList>>],
+        endpoints: &[Endpoint],
         vertices: &mut [MaybeUninit<Vertex>],
         wire_views: &mut [MaybeUninit<WireView>],
         perform_centering: bool,
-    ) -> Result<NetView, RoutingError>
-    where
-        for<'a> &'a WaypointList: IntoIterator<Item: Borrow<Point>>,
-    {
+    ) -> Result<NetView, RoutingError> {
         let mut ends = Vec::new();
         let mut centering_candidates = Vec::new();
         let mut junctions = routing::JunctionMap::default();
@@ -93,7 +89,7 @@ impl Graph {
 
         routing::connect_net(
             self,
-            endpoints.into_iter(),
+            endpoints.iter(),
             0,
             0,
             &mut vertices.into(),

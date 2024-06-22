@@ -6,6 +6,7 @@ use crate::routing::{Array, CenteringCandidate, JunctionMap};
 use crate::*;
 use rayon::prelude::*;
 use serde::{Deserialize, Serialize};
+use std::borrow::Cow;
 use std::ffi::{c_char, CStr};
 use std::fs::File;
 use std::mem::MaybeUninit;
@@ -24,6 +25,17 @@ pub enum Result {
     UninitializedError = 5,
     InvalidArgumentError = 6,
     IoError = 7,
+}
+
+impl From<RoutingError> for Result {
+    fn from(err: RoutingError) -> Self {
+        match err {
+            RoutingError::NotEnoughEndpoints => Result::InvalidArgumentError,
+            RoutingError::VertexBufferOverflow => Result::VertexBufferOverflowError,
+            RoutingError::WireViewBufferOverflow => Result::WireViewBufferOverflowError,
+            RoutingError::InvalidPoint => Result::InvalidOperationError,
+        }
+    }
 }
 
 #[derive(Debug, Clone, Copy)]
@@ -409,149 +421,26 @@ pub unsafe extern "C" fn RT_graph_free(graph: *mut Graph) -> Result {
     Result::Success
 }
 
-pub type EndpointIndex = u32;
-pub type WaypointIndex = u32;
-
-pub const INVALID_ENDPOINT_INDEX: EndpointIndex = u32::MAX;
-pub const INVALID_WAYPOINT_INDEX: WaypointIndex = u32::MAX;
-
-#[derive(Debug, Clone, Copy, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy)]
 #[repr(C)]
 pub struct Endpoint {
     /// The position of the endpoint.
     pub position: Point,
-    /// The first waypoint associated with this endpoint, or `RT_INVALID_WAYPOINT_INDEX` if none.
-    pub first_waypoint: WaypointIndex,
-    /// The next endpoint in the net, or `RT_INVALID_ENDPOINT_INDEX` if none.
-    pub next: EndpointIndex,
+    /// The waypoints associated with this endpoint.
+    pub waypoints: Slice<Point>,
 }
 
-#[derive(Debug, Clone, Copy, Serialize, Deserialize)]
-#[repr(C)]
-pub struct Waypoint {
-    /// The position of the waypoint.
-    pub position: Point,
-    /// The next waypoint in the net, or `RT_INVALID_WAYPOINT_INDEX` if none.
-    pub next: WaypointIndex,
-}
-
-#[derive(Debug, Clone, Copy, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy)]
 #[repr(C)]
 pub struct Net {
-    /// The first endpoint of the net.
-    pub first_endpoint: EndpointIndex,
-}
-
-#[derive(Clone, Copy)]
-struct EndpointList<'a> {
-    endpoints: &'a [Endpoint],
-    waypoints: &'a [Waypoint],
-    first: EndpointIndex,
-}
-
-impl<'a> EndpointList<'a> {
-    #[inline]
-    fn new(endpoints: &'a [Endpoint], waypoints: &'a [Waypoint], first: EndpointIndex) -> Self {
-        Self {
-            endpoints,
-            waypoints,
-            first,
-        }
-    }
-}
-
-#[derive(Clone)]
-struct EndpointIter<'a> {
-    endpoints: &'a [Endpoint],
-    waypoints: &'a [Waypoint],
-    current: EndpointIndex,
-}
-
-impl<'a> IntoIterator for EndpointList<'a> {
-    type Item = routing::Endpoint<WaypointList<'a>>;
-    type IntoIter = EndpointIter<'a>;
-
-    #[inline]
-    fn into_iter(self) -> Self::IntoIter {
-        EndpointIter {
-            endpoints: self.endpoints,
-            waypoints: self.waypoints,
-            current: self.first,
-        }
-    }
-}
-
-impl<'a> Iterator for EndpointIter<'a> {
-    type Item = routing::Endpoint<WaypointList<'a>>;
-
-    #[inline]
-    fn next(&mut self) -> Option<Self::Item> {
-        if self.current == INVALID_ENDPOINT_INDEX {
-            return None;
-        }
-
-        let endpoint = self.endpoints[self.current as usize];
-        self.current = endpoint.next;
-        Some(routing::Endpoint {
-            position: endpoint.position,
-            waypoints: WaypointList::new(self.waypoints, endpoint.first_waypoint),
-        })
-    }
-}
-
-#[derive(Clone, Copy)]
-struct WaypointList<'a> {
-    waypoints: &'a [Waypoint],
-    first: WaypointIndex,
-}
-
-impl<'a> WaypointList<'a> {
-    #[inline]
-    fn new(waypoints: &'a [Waypoint], first: WaypointIndex) -> Self {
-        Self { waypoints, first }
-    }
-}
-
-#[derive(Clone)]
-struct WaypointIter<'a> {
-    waypoints: &'a [Waypoint],
-    current: WaypointIndex,
-}
-
-impl<'a> IntoIterator for &'_ WaypointList<'a> {
-    type Item = Point;
-    type IntoIter = WaypointIter<'a>;
-
-    #[inline]
-    fn into_iter(self) -> Self::IntoIter {
-        WaypointIter {
-            waypoints: self.waypoints,
-            current: self.first,
-        }
-    }
-}
-
-impl Iterator for WaypointIter<'_> {
-    type Item = Point;
-
-    #[inline]
-    fn next(&mut self) -> Option<Self::Item> {
-        if self.current == INVALID_WAYPOINT_INDEX {
-            return None;
-        }
-
-        let waypoint = self.waypoints[self.current as usize];
-        self.current = waypoint.next;
-        Some(waypoint.position)
-    }
+    /// The endpoints of the net.
+    pub endpoints: Slice<Endpoint>,
 }
 
 #[derive(Serialize, Deserialize)]
 struct GraphConnectNetsQuery {
     graph: GraphData,
-    nets: Vec<Net>,
-    endpoints: Vec<Endpoint>,
-    waypoints: Vec<Waypoint>,
+    nets: Vec<Vec<routing::Endpoint<'static>>>,
     perform_centering: bool,
 }
 
@@ -560,13 +449,11 @@ struct GraphConnectNetsQuery {
 /// **Parameters**  
 /// `graph`: The graph to serialize.  
 /// `nets`: The list of nets to serialize.  
-/// `endpoints`: The list of net endpoints to serialize.  
-/// `waypoints`: The list of net waypoints to serialize.  
 /// `file_path`: The file to serialize the graph into.
 ///
 /// **Returns**  
 /// `RT_RESULT_SUCCESS`: The operation completed successfully.  
-/// `RT_RESULT_NULL_POINTER_ERROR`: `graph`, `nets.ptr`, `endpoints.ptr`, `waypoints.ptr` or `file_path` was `NULL`.  
+/// `RT_RESULT_NULL_POINTER_ERROR`: `graph`, `nets.ptr` or `file_path` was `NULL`.  
 /// `RT_RESULT_INVALID_OPERATION_ERROR`: The serialization failed.  
 /// `RT_RESULT_INVALID_ARGUMENT_ERROR`: `file_path` did not contain legal UTF-8.  
 /// `RT_RESULT_IO_ERROR`: An IO error occurred while writing to the file.
@@ -575,26 +462,41 @@ struct GraphConnectNetsQuery {
 pub unsafe extern "C" fn RT_graph_serialize_connect_nets_query(
     graph: *const Graph,
     nets: Slice<Net>,
-    endpoints: Slice<Endpoint>,
-    waypoints: Slice<Waypoint>,
     perform_centering: bool,
     file_path: *const c_char,
 ) -> Result {
-    if graph.is_null()
-        || nets.is_null()
-        || endpoints.is_null()
-        || waypoints.is_null()
-        || file_path.is_null()
-    {
+    if graph.is_null() || nets.is_null() || file_path.is_null() {
         return Result::NullPointerError;
     }
 
     let graph = unsafe { &*graph };
+    let nets = unsafe { nets.as_ref() };
+
+    let mut owned_nets = Vec::with_capacity(nets.len());
+    for net in nets {
+        if net.endpoints.is_null() {
+            return Result::NullPointerError;
+        }
+
+        let endpoints = unsafe { net.endpoints.as_ref() };
+        let mut owned_endpoints = Vec::with_capacity(endpoints.len());
+        for endpoint in endpoints {
+            if endpoint.waypoints.is_null() {
+                return Result::NullPointerError;
+            }
+
+            owned_endpoints.push(routing::Endpoint {
+                position: endpoint.position,
+                waypoints: Cow::Owned(unsafe { endpoint.waypoints.as_ref().to_vec() }),
+            });
+        }
+
+        owned_nets.push(owned_endpoints);
+    }
+
     let query = GraphConnectNetsQuery {
         graph: graph.data.clone(),
-        nets: unsafe { nets.as_ref().to_owned() },
-        endpoints: unsafe { endpoints.as_ref().to_owned() },
-        waypoints: unsafe { waypoints.as_ref().to_owned() },
+        nets: owned_nets,
         perform_centering,
     };
 
@@ -614,20 +516,39 @@ pub unsafe extern "C" fn RT_graph_serialize_connect_nets_query(
     }
 }
 
+enum NetError {
+    NullPointerError,
+    Routing(RoutingError),
+}
+
+impl From<RoutingError> for NetError {
+    #[inline]
+    fn from(err: RoutingError) -> Self {
+        Self::Routing(err)
+    }
+}
+
+impl From<NetError> for Result {
+    fn from(err: NetError) -> Self {
+        match err {
+            NetError::NullPointerError => Result::NullPointerError,
+            NetError::Routing(err) => err.into(),
+        }
+    }
+}
+
 /// Connects nets in a graph.
 ///
 /// **Parameters**  
 /// `graph`: The graph to connect the nets in.  
 /// `nets`: A list of nets to connect.  
-/// `endpoints`: A list of net endpoints.  
-/// `waypoints`: A list of net waypoints.  
 /// `vertices`: A list to write the found vertices into.  
 /// `wire_views`: A list to write the found wires into.  
 /// `net_views`: A list to write the found nets into.
 ///
 /// **Returns**  
 /// `RT_RESULT_SUCCESS`: The operation completed successfully.  
-/// `RT_RESULT_NULL_POINTER_ERROR`: `graph`, `nets.ptr`, `endpoints.ptr`, `waypoints.ptr`, `vertices.ptr`, `wire_views.ptr` or `net_views.ptr` was `NULL`.  
+/// `RT_RESULT_NULL_POINTER_ERROR`: `graph`, `nets.ptr`, `vertices.ptr`, `wire_views.ptr` or `net_views.ptr` was `NULL`.  
 /// `RT_RESULT_INVALID_OPERATION_ERROR`: One of the paths had an invalid start or end point.  
 /// `RT_RESULT_VERTEX_BUFFER_OVERFLOW_ERROR`: The capacity of `vertices` was too small to hold all vertices.  
 /// `RT_RESULT_WIRE_VIEW_BUFFER_OVERFLOW_ERROR`: The capacity of `wire_views` was too small to hold all wire views.  
@@ -638,8 +559,6 @@ pub unsafe extern "C" fn RT_graph_serialize_connect_nets_query(
 pub unsafe extern "C" fn RT_graph_connect_nets(
     graph: *const Graph,
     nets: Slice<Net>,
-    endpoints: Slice<Endpoint>,
-    waypoints: Slice<Waypoint>,
     vertices: MutSlice<Vertex>,
     wire_views: MutSlice<WireView>,
     mut net_views: MutSlice<NetView>,
@@ -653,8 +572,6 @@ pub unsafe extern "C" fn RT_graph_connect_nets(
 
     if graph.is_null()
         || nets.is_null()
-        || endpoints.is_null()
-        || waypoints.is_null()
         || vertices.is_null()
         || wire_views.is_null()
         || net_views.is_null()
@@ -668,8 +585,6 @@ pub unsafe extern "C" fn RT_graph_connect_nets(
 
     let graph = unsafe { &*graph };
     let nets = unsafe { nets.as_ref() };
-    let endpoints = unsafe { endpoints.as_ref() };
-    let waypoints = unsafe { waypoints.as_ref() };
     let net_views = unsafe { net_views.as_uninit_mut() };
 
     let vertices_per_thread = vertices.len / (num_cpus as usize);
@@ -741,9 +656,23 @@ pub unsafe extern "C" fn RT_graph_connect_nets(
                 junctions,
             } = &mut *threadlocal_data.mutable.borrow_mut();
 
-            let endpoints = EndpointList::new(endpoints, waypoints, net.first_endpoint).into_iter();
+            if net.endpoints.is_null() {
+                return Err(NetError::NullPointerError);
+            }
 
-            routing::connect_net::<_, _, WaypointList>(
+            let endpoints = unsafe { net.endpoints.as_ref() };
+            for endpoint in endpoints {
+                if endpoint.waypoints.is_null() {
+                    return Err(NetError::NullPointerError);
+                }
+            }
+
+            let endpoints = endpoints.iter().map(|endpoint| routing::Endpoint {
+                position: endpoint.position,
+                waypoints: Cow::Borrowed(unsafe { endpoint.waypoints.as_ref() }),
+            });
+
+            routing::connect_net(
                 graph,
                 endpoints,
                 vertex_base_offset,
@@ -755,14 +684,13 @@ pub unsafe extern "C" fn RT_graph_connect_nets(
                 centering_candidates,
                 junctions,
                 perform_centering,
-            )
+            )?;
+
+            Ok(())
         });
 
     match result {
         Ok(_) => Result::Success,
-        Err(RoutingError::NotEnoughEndpoints) => Result::InvalidArgumentError,
-        Err(RoutingError::VertexBufferOverflow) => Result::VertexBufferOverflowError,
-        Err(RoutingError::WireViewBufferOverflow) => Result::WireViewBufferOverflowError,
-        Err(RoutingError::InvalidPoint) => Result::InvalidOperationError,
+        Err(err) => err.into(),
     }
 }

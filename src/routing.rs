@@ -1,6 +1,7 @@
 use crate::graph::{NodeIndex, INVALID_NODE_INDEX};
 use crate::*;
-use std::borrow::Borrow;
+use serde::{Deserialize, Serialize};
+use std::borrow::{Borrow, Cow};
 use std::mem::MaybeUninit;
 use std::ops::{Deref, DerefMut};
 
@@ -115,29 +116,29 @@ pub struct NetView {
     pub vertex_offset: u32,
 }
 
-fn pick_root_path<EndpointList, WaypointList, WaypointListRef>(
-    mut endpoints: EndpointList,
-) -> Result<(Endpoint<WaypointList>, Endpoint<WaypointList>), ()>
+fn pick_root_path<'a, Iter>(mut endpoints: Iter) -> Result<(Iter::Item, Iter::Item), ()>
 where
-    WaypointListRef: ?Sized,
-    for<'a> &'a WaypointListRef: IntoIterator<Item: Borrow<Point>>,
-    WaypointList: Clone + Borrow<WaypointListRef>,
-    EndpointList: Clone + Iterator<Item: Borrow<Endpoint<WaypointList>>>,
+    Iter: Clone + Iterator<Item: Borrow<Endpoint<'a>>>,
 {
     let mut max_dist = 0;
-    let mut max_pair: Option<(Endpoint<WaypointList>, Endpoint<WaypointList>)> = None;
+    let mut max_pair: Option<(Iter::Item, Iter::Item)> = None;
 
     while let Some(a) = endpoints.next() {
-        let a = a.borrow();
+        let a_pos = a.borrow().position;
 
+        let mut max_b: Option<Iter::Item> = None;
         for b in endpoints.clone() {
-            let b = b.borrow();
+            let b_pos = b.borrow().position;
 
-            let dist = a.position.manhatten_distance_to(b.position);
+            let dist = a_pos.manhatten_distance_to(b_pos);
             if dist >= max_dist {
                 max_dist = dist;
-                max_pair = Some((a.clone(), b.clone()));
+                max_b = Some(b);
             }
+        }
+
+        if let Some(max_b) = max_b {
+            max_pair = Some((a, max_b));
         }
     }
 
@@ -269,28 +270,23 @@ pub enum RoutingError {
     InvalidPoint,
 }
 
-fn route_root_wire<WaypointList, WaypointListRef>(
+fn route_root_wire<'a>(
     graph: &GraphData,
     path_finder: &mut PathFinder,
-    root_start: Endpoint<WaypointList>,
-    root_end: Endpoint<WaypointList>,
+    root_start: &Endpoint<'a>,
+    root_end: &Endpoint<'a>,
     vertices: &mut Array<Vertex>,
     wire_views: &mut Array<WireView>,
     ends: &mut Vec<Point>,
     centering_candidates: &mut Vec<CenteringCandidate>,
-) -> Result<u32, RoutingError>
-where
-    WaypointListRef: ?Sized,
-    for<'a> &'a WaypointListRef: IntoIterator<Item: Borrow<Point>>,
-    WaypointList: Borrow<WaypointListRef>,
-{
+) -> Result<u32, RoutingError> {
     let mut wire_count = 0;
 
     let waypoints = root_start
         .waypoints
-        .borrow()
-        .into_iter()
-        .chain(root_end.waypoints.borrow());
+        .iter()
+        .copied()
+        .chain(root_end.waypoints.iter().copied());
 
     let (last_waypoint, last_waypoint_dir) =
         match path_finder.find_path(graph, root_start.position, None, waypoints, true) {
@@ -456,24 +452,18 @@ fn insert_junction(
     }
 }
 
-fn route_branch_wires<EndpointList, WaypointList, WaypointListRef>(
+fn route_branch_wires<'a>(
     graph: &GraphData,
     path_finder: &mut PathFinder,
-    endpoints: EndpointList,
-    root_start: Endpoint<WaypointList>,
-    root_end: Endpoint<WaypointList>,
+    endpoints: impl Iterator<Item: Borrow<Endpoint<'a>>>,
+    root_start: &Endpoint<'a>,
+    root_end: &Endpoint<'a>,
     vertices: &mut Array<Vertex>,
     wire_views: &mut Array<WireView>,
     ends: &mut Vec<Point>,
     centering_candidates: &mut Vec<CenteringCandidate>,
     junctions: &mut JunctionMap,
-) -> Result<u32, RoutingError>
-where
-    WaypointListRef: ?Sized,
-    for<'a> &'a WaypointListRef: IntoIterator<Item: Borrow<Point>>,
-    WaypointList: Borrow<WaypointListRef>,
-    EndpointList: Clone + Iterator<Item: Borrow<Endpoint<WaypointList>>>,
-{
+) -> Result<u32, RoutingError> {
     let mut wire_count = 0;
 
     for endpoint in endpoints {
@@ -485,7 +475,7 @@ where
                 graph,
                 endpoint.position,
                 None,
-                endpoint.waypoints.borrow(),
+                endpoint.waypoints.iter().copied(),
                 true,
             ) {
                 PathFindResult::Found(path) => {
@@ -1017,15 +1007,28 @@ fn center_wires(
     }
 }
 
-#[derive(Debug, Clone)]
-pub struct Endpoint<WaypointList> {
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct Endpoint<'a> {
     pub position: Point,
-    pub waypoints: WaypointList,
+    pub waypoints: Cow<'a, [Point]>,
 }
 
-pub(crate) fn connect_net<EndpointList, WaypointList, WaypointListRef>(
+impl<'a> Endpoint<'a> {
+    pub fn borrowed<'this, 'out>(&'this self) -> Endpoint<'out>
+    where
+        'a: 'out,
+        'this: 'out,
+    {
+        Endpoint {
+            position: self.position,
+            waypoints: Cow::Borrowed(self.waypoints.as_ref()),
+        }
+    }
+}
+
+pub(crate) fn connect_net<'a>(
     graph: &Graph,
-    endpoints: EndpointList,
+    endpoints: impl Clone + Iterator<Item: Borrow<Endpoint<'a>>>,
     vertex_base_offset: usize,
     wire_base_offset: usize,
     vertices: &mut Array<Vertex>,
@@ -1035,13 +1038,7 @@ pub(crate) fn connect_net<EndpointList, WaypointList, WaypointListRef>(
     centering_candidates: &mut Vec<CenteringCandidate>,
     junctions: &mut JunctionMap,
     perform_centering: bool,
-) -> Result<(), RoutingError>
-where
-    WaypointListRef: ?Sized,
-    for<'a> &'a WaypointListRef: IntoIterator<Item: Borrow<Point>>,
-    WaypointList: Clone + Borrow<WaypointListRef>,
-    EndpointList: Clone + Iterator<Item: Borrow<Endpoint<WaypointList>>>,
-{
+) -> Result<(), RoutingError> {
     let path_finder = &mut *graph.path_finder.get_or_default().borrow_mut();
     let (root_start, root_end) =
         pick_root_path(endpoints.clone()).map_err(|_| RoutingError::NotEnoughEndpoints)?;
@@ -1060,8 +1057,8 @@ where
     let root_wire_count = route_root_wire(
         &graph.data,
         path_finder,
-        root_start.clone(),
-        root_end.clone(),
+        root_start.borrow(),
+        root_end.borrow(),
         vertices,
         wire_views,
         ends,
@@ -1072,8 +1069,8 @@ where
         &graph.data,
         path_finder,
         endpoints,
-        root_start,
-        root_end,
+        root_start.borrow(),
+        root_end.borrow(),
         vertices,
         wire_views,
         ends,

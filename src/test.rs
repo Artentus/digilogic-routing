@@ -53,20 +53,20 @@ impl<'a, T> From<&'a mut [T]> for MutSlice<T> {
 fn test_impl(graph: &Graph, net_points: [Point; 2], expected: &[Vertex]) {
     let thread_count = init();
 
-    let nets = [Net { first_endpoint: 0 }];
-
     let endpoints = [
         ffi::Endpoint {
             position: net_points[0],
-            first_waypoint: INVALID_WAYPOINT_INDEX,
-            next: 1,
+            waypoints: [].as_slice().into(),
         },
         ffi::Endpoint {
             position: net_points[1],
-            first_waypoint: INVALID_WAYPOINT_INDEX,
-            next: INVALID_ENDPOINT_INDEX,
+            waypoints: [].as_slice().into(),
         },
     ];
+
+    let nets = [Net {
+        endpoints: endpoints.as_slice().into(),
+    }];
 
     let mut vertices = vec![Vertex::default(); expected.len() * thread_count];
     let mut wire_views = vec![WireView::default(); thread_count];
@@ -76,8 +76,6 @@ fn test_impl(graph: &Graph, net_points: [Point; 2], expected: &[Vertex]) {
         RT_graph_connect_nets(
             graph as *const _,
             nets.as_slice().into(),
-            endpoints.as_slice().into(),
-            [].as_slice().into(),
             vertices.as_mut_slice().into(),
             wire_views.as_mut_slice().into(),
             net_views.as_mut_slice().into(),

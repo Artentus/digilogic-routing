@@ -193,7 +193,7 @@ impl PathFinder {
         graph: &GraphData,
         start: Point,
         start_straight_dir: Option<Direction>,
-        ends: impl IntoIterator<Item: Borrow<Point>>,
+        ends: impl IntoIterator<Item = Point>,
         visit_all: bool,
     ) -> PathFindResult<&'a Path> {
         let Some(mut start_index) = graph.find_node(start) else {
