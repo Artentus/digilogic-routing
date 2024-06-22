@@ -56,16 +56,19 @@ fn test_impl(graph: &Graph, net_points: [Point; 2], expected: &[Vertex]) {
     let endpoints = [
         ffi::Endpoint {
             position: net_points[0],
-            waypoints: [].as_slice().into(),
+            waypoint_offset: 0,
+            waypoint_count: 0,
         },
         ffi::Endpoint {
             position: net_points[1],
-            waypoints: [].as_slice().into(),
+            waypoint_offset: 0,
+            waypoint_count: 0,
         },
     ];
 
     let nets = [Net {
-        endpoints: endpoints.as_slice().into(),
+        endpoint_offset: 0,
+        endpoint_count: 2,
     }];
 
     let mut vertices = vec![Vertex::default(); expected.len() * thread_count];
@@ -76,6 +79,8 @@ fn test_impl(graph: &Graph, net_points: [Point; 2], expected: &[Vertex]) {
         RT_graph_connect_nets(
             graph as *const _,
             nets.as_slice().into(),
+            endpoints.as_slice().into(),
+            [].as_slice().into(),
             vertices.as_mut_slice().into(),
             wire_views.as_mut_slice().into(),
             net_views.as_mut_slice().into(),

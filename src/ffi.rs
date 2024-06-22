@@ -421,26 +421,32 @@ pub unsafe extern "C" fn RT_graph_free(graph: *mut Graph) -> Result {
     Result::Success
 }
 
-#[derive(Debug, Clone, Copy)]
+#[derive(Debug, Clone, Copy, Serialize, Deserialize)]
 #[repr(C)]
 pub struct Endpoint {
     /// The position of the endpoint.
     pub position: Point,
-    /// The waypoints associated with this endpoint.
-    pub waypoints: Slice<Point>,
+    /// The offset into the waypoint list at which the waypoints of this endpoint start.
+    pub waypoint_offset: u32,
+    /// The number of waypoints associated with the endpoint.
+    pub waypoint_count: u32,
 }
 
-#[derive(Debug, Clone, Copy)]
+#[derive(Debug, Clone, Copy, Serialize, Deserialize)]
 #[repr(C)]
 pub struct Net {
-    /// The endpoints of the net.
-    pub endpoints: Slice<Endpoint>,
+    /// The offset into the endpoint list at which the endpoints of this net start.
+    pub endpoint_offset: u32,
+    /// The number of endpoints in the net.
+    pub endpoint_count: u32,
 }
 
 #[derive(Serialize, Deserialize)]
 struct GraphConnectNetsQuery {
     graph: GraphData,
-    nets: Vec<Vec<routing::Endpoint<'static>>>,
+    nets: Vec<Net>,
+    endpoints: Vec<Endpoint>,
+    waypoints: Vec<Point>,
     perform_centering: bool,
 }
 
@@ -449,11 +455,13 @@ struct GraphConnectNetsQuery {
 /// **Parameters**  
 /// `graph`: The graph to serialize.  
 /// `nets`: The list of nets to serialize.  
+/// `endpoints`: The list of endpoints to serialize.  
+/// `waypoints`: The list of waypoints to serialize.  
 /// `file_path`: The file to serialize the graph into.
 ///
 /// **Returns**  
 /// `RT_RESULT_SUCCESS`: The operation completed successfully.  
-/// `RT_RESULT_NULL_POINTER_ERROR`: `graph`, `nets.ptr` or `file_path` was `NULL`.  
+/// `RT_RESULT_NULL_POINTER_ERROR`: `graph`, `nets.ptr`, `endpoints.ptr`, `waypoints.ptr` or `file_path` was `NULL`.  
 /// `RT_RESULT_INVALID_OPERATION_ERROR`: The serialization failed.  
 /// `RT_RESULT_INVALID_ARGUMENT_ERROR`: `file_path` did not contain legal UTF-8.  
 /// `RT_RESULT_IO_ERROR`: An IO error occurred while writing to the file.
@@ -462,41 +470,30 @@ struct GraphConnectNetsQuery {
 pub unsafe extern "C" fn RT_graph_serialize_connect_nets_query(
     graph: *const Graph,
     nets: Slice<Net>,
+    endpoints: Slice<Endpoint>,
+    waypoints: Slice<Point>,
     perform_centering: bool,
     file_path: *const c_char,
 ) -> Result {
-    if graph.is_null() || nets.is_null() || file_path.is_null() {
+    if graph.is_null()
+        || nets.is_null()
+        || endpoints.is_null()
+        || waypoints.is_null()
+        || file_path.is_null()
+    {
         return Result::NullPointerError;
     }
 
     let graph = unsafe { &*graph };
     let nets = unsafe { nets.as_ref() };
-
-    let mut owned_nets = Vec::with_capacity(nets.len());
-    for net in nets {
-        if net.endpoints.is_null() {
-            return Result::NullPointerError;
-        }
-
-        let endpoints = unsafe { net.endpoints.as_ref() };
-        let mut owned_endpoints = Vec::with_capacity(endpoints.len());
-        for endpoint in endpoints {
-            if endpoint.waypoints.is_null() {
-                return Result::NullPointerError;
-            }
-
-            owned_endpoints.push(routing::Endpoint {
-                position: endpoint.position,
-                waypoints: Cow::Owned(unsafe { endpoint.waypoints.as_ref().to_vec() }),
-            });
-        }
-
-        owned_nets.push(owned_endpoints);
-    }
+    let endpoints = unsafe { endpoints.as_ref() };
+    let waypoints = unsafe { waypoints.as_ref() };
 
     let query = GraphConnectNetsQuery {
         graph: graph.data.clone(),
-        nets: owned_nets,
+        nets: nets.to_vec(),
+        endpoints: endpoints.to_vec(),
+        waypoints: waypoints.to_vec(),
         perform_centering,
     };
 
@@ -516,39 +513,20 @@ pub unsafe extern "C" fn RT_graph_serialize_connect_nets_query(
     }
 }
 
-enum NetError {
-    NullPointerError,
-    Routing(RoutingError),
-}
-
-impl From<RoutingError> for NetError {
-    #[inline]
-    fn from(err: RoutingError) -> Self {
-        Self::Routing(err)
-    }
-}
-
-impl From<NetError> for Result {
-    fn from(err: NetError) -> Self {
-        match err {
-            NetError::NullPointerError => Result::NullPointerError,
-            NetError::Routing(err) => err.into(),
-        }
-    }
-}
-
 /// Connects nets in a graph.
 ///
 /// **Parameters**  
 /// `graph`: The graph to connect the nets in.  
 /// `nets`: A list of nets to connect.  
+/// `endpoints`: A list of endpoints.  
+/// `waypoints`: A list of waypoints.  
 /// `vertices`: A list to write the found vertices into.  
 /// `wire_views`: A list to write the found wires into.  
 /// `net_views`: A list to write the found nets into.
 ///
 /// **Returns**  
 /// `RT_RESULT_SUCCESS`: The operation completed successfully.  
-/// `RT_RESULT_NULL_POINTER_ERROR`: `graph`, `nets.ptr`, `vertices.ptr`, `wire_views.ptr` or `net_views.ptr` was `NULL`.  
+/// `RT_RESULT_NULL_POINTER_ERROR`: `graph`, `nets.ptr`, `endpoints.ptr`, `waypoints.ptr`, `vertices.ptr`, `wire_views.ptr` or `net_views.ptr` was `NULL`.  
 /// `RT_RESULT_INVALID_OPERATION_ERROR`: One of the paths had an invalid start or end point.  
 /// `RT_RESULT_VERTEX_BUFFER_OVERFLOW_ERROR`: The capacity of `vertices` was too small to hold all vertices.  
 /// `RT_RESULT_WIRE_VIEW_BUFFER_OVERFLOW_ERROR`: The capacity of `wire_views` was too small to hold all wire views.  
@@ -559,6 +537,8 @@ impl From<NetError> for Result {
 pub unsafe extern "C" fn RT_graph_connect_nets(
     graph: *const Graph,
     nets: Slice<Net>,
+    endpoints: Slice<Endpoint>,
+    waypoints: Slice<Point>,
     vertices: MutSlice<Vertex>,
     wire_views: MutSlice<WireView>,
     mut net_views: MutSlice<NetView>,
@@ -572,6 +552,8 @@ pub unsafe extern "C" fn RT_graph_connect_nets(
 
     if graph.is_null()
         || nets.is_null()
+        || endpoints.is_null()
+        || waypoints.is_null()
         || vertices.is_null()
         || wire_views.is_null()
         || net_views.is_null()
@@ -585,6 +567,8 @@ pub unsafe extern "C" fn RT_graph_connect_nets(
 
     let graph = unsafe { &*graph };
     let nets = unsafe { nets.as_ref() };
+    let endpoints = unsafe { endpoints.as_ref() };
+    let waypoints = unsafe { waypoints.as_ref() };
     let net_views = unsafe { net_views.as_uninit_mut() };
 
     let vertices_per_thread = vertices.len / (num_cpus as usize);
@@ -656,20 +640,19 @@ pub unsafe extern "C" fn RT_graph_connect_nets(
                 junctions,
             } = &mut *threadlocal_data.mutable.borrow_mut();
 
-            if net.endpoints.is_null() {
-                return Err(NetError::NullPointerError);
-            }
+            let endpoint_start = net.endpoint_offset as usize;
+            let endpoint_end = endpoint_start + (net.endpoint_count as usize);
+            let endpoints = &endpoints[endpoint_start..endpoint_end];
 
-            let endpoints = unsafe { net.endpoints.as_ref() };
-            for endpoint in endpoints {
-                if endpoint.waypoints.is_null() {
-                    return Err(NetError::NullPointerError);
+            let endpoints = endpoints.iter().map(|endpoint| {
+                let waypoint_start = endpoint.waypoint_offset as usize;
+                let waypoint_end = waypoint_start + (endpoint.waypoint_count as usize);
+                let waypoints = &waypoints[waypoint_start..waypoint_end];
+
+                routing::Endpoint {
+                    position: endpoint.position,
+                    waypoints: Cow::Borrowed(waypoints),
                 }
-            }
-
-            let endpoints = endpoints.iter().map(|endpoint| routing::Endpoint {
-                position: endpoint.position,
-                waypoints: Cow::Borrowed(unsafe { endpoint.waypoints.as_ref() }),
             });
 
             routing::connect_net(
@@ -684,9 +667,7 @@ pub unsafe extern "C" fn RT_graph_connect_nets(
                 centering_candidates,
                 junctions,
                 perform_centering,
-            )?;
-
-            Ok(())
+            )
         });
 
     match result {

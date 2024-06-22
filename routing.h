@@ -146,10 +146,21 @@ typedef struct RT_Slice_Node {
     size_t len;
 } RT_Slice_Node;
 
-typedef struct RT_Slice_Point {
-    const struct RT_Point *ptr;
+typedef struct RT_Net {
+    /**
+     * The offset into the endpoint list at which the endpoints of this net start.
+     */
+    uint32_t endpoint_offset;
+    /**
+     * The number of endpoints in the net.
+     */
+    uint32_t endpoint_count;
+} RT_Net;
+
+typedef struct RT_Slice_Net {
+    const struct RT_Net *ptr;
     size_t len;
-} RT_Slice_Point;
+} RT_Slice_Net;
 
 typedef struct RT_Endpoint {
     /**
@@ -157,9 +168,13 @@ typedef struct RT_Endpoint {
      */
     struct RT_Point position;
     /**
-     * The waypoints associated with this endpoint.
+     * The offset into the waypoint list at which the waypoints of this endpoint start.
      */
-    struct RT_Slice_Point waypoints;
+    uint32_t waypoint_offset;
+    /**
+     * The number of waypoints associated with the endpoint.
+     */
+    uint32_t waypoint_count;
 } RT_Endpoint;
 
 typedef struct RT_Slice_Endpoint {
@@ -167,17 +182,10 @@ typedef struct RT_Slice_Endpoint {
     size_t len;
 } RT_Slice_Endpoint;
 
-typedef struct RT_Net {
-    /**
-     * The endpoints of the net.
-     */
-    struct RT_Slice_Endpoint endpoints;
-} RT_Net;
-
-typedef struct RT_Slice_Net {
-    const struct RT_Net *ptr;
+typedef struct RT_Slice_Point {
+    const struct RT_Point *ptr;
     size_t len;
-} RT_Slice_Net;
+} RT_Slice_Point;
 
 typedef struct RT_Vertex {
     /**
@@ -361,11 +369,13 @@ RT_MUST_USE RT_Result RT_graph_free(struct RT_Graph *graph);
  * **Parameters**
  * `graph`: The graph to serialize.
  * `nets`: The list of nets to serialize.
+ * `endpoints`: The list of endpoints to serialize.
+ * `waypoints`: The list of waypoints to serialize.
  * `file_path`: The file to serialize the graph into.
  *
  * **Returns**
  * `RT_RESULT_SUCCESS`: The operation completed successfully.
- * `RT_RESULT_NULL_POINTER_ERROR`: `graph`, `nets.ptr` or `file_path` was `NULL`.
+ * `RT_RESULT_NULL_POINTER_ERROR`: `graph`, `nets.ptr`, `endpoints.ptr`, `waypoints.ptr` or `file_path` was `NULL`.
  * `RT_RESULT_INVALID_OPERATION_ERROR`: The serialization failed.
  * `RT_RESULT_INVALID_ARGUMENT_ERROR`: `file_path` did not contain legal UTF-8.
  * `RT_RESULT_IO_ERROR`: An IO error occurred while writing to the file.
@@ -373,6 +383,8 @@ RT_MUST_USE RT_Result RT_graph_free(struct RT_Graph *graph);
 RT_MUST_USE
 RT_Result RT_graph_serialize_connect_nets_query(const struct RT_Graph *graph,
                                                 struct RT_Slice_Net nets,
+                                                struct RT_Slice_Endpoint endpoints,
+                                                struct RT_Slice_Point waypoints,
                                                 bool perform_centering,
                                                 const char *file_path);
 
@@ -382,13 +394,15 @@ RT_Result RT_graph_serialize_connect_nets_query(const struct RT_Graph *graph,
  * **Parameters**
  * `graph`: The graph to connect the nets in.
  * `nets`: A list of nets to connect.
+ * `endpoints`: A list of endpoints.
+ * `waypoints`: A list of waypoints.
  * `vertices`: A list to write the found vertices into.
  * `wire_views`: A list to write the found wires into.
  * `net_views`: A list to write the found nets into.
  *
  * **Returns**
  * `RT_RESULT_SUCCESS`: The operation completed successfully.
- * `RT_RESULT_NULL_POINTER_ERROR`: `graph`, `nets.ptr`, `vertices.ptr`, `wire_views.ptr` or `net_views.ptr` was `NULL`.
+ * `RT_RESULT_NULL_POINTER_ERROR`: `graph`, `nets.ptr`, `endpoints.ptr`, `waypoints.ptr`, `vertices.ptr`, `wire_views.ptr` or `net_views.ptr` was `NULL`.
  * `RT_RESULT_INVALID_OPERATION_ERROR`: One of the paths had an invalid start or end point.
  * `RT_RESULT_VERTEX_BUFFER_OVERFLOW_ERROR`: The capacity of `vertices` was too small to hold all vertices.
  * `RT_RESULT_WIRE_VIEW_BUFFER_OVERFLOW_ERROR`: The capacity of `wire_views` was too small to hold all wire views.
@@ -398,6 +412,8 @@ RT_Result RT_graph_serialize_connect_nets_query(const struct RT_Graph *graph,
 RT_MUST_USE
 RT_Result RT_graph_connect_nets(const struct RT_Graph *graph,
                                 struct RT_Slice_Net nets,
+                                struct RT_Slice_Endpoint endpoints,
+                                struct RT_Slice_Point waypoints,
                                 struct RT_MutSlice_Vertex vertices,
                                 struct RT_MutSlice_WireView wire_views,
                                 struct RT_MutSlice_NetView net_views,
