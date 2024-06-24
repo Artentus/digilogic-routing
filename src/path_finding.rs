@@ -350,7 +350,7 @@ impl PathFinder {
                     if update {
                         // Shorter path found, update it.
                         self.g_score.insert(neighbor_index, new_g_score);
-                        replay.path_finding_set_g_score(neighbor_index, 0);
+                        replay.path_finding_set_g_score(neighbor_index, new_g_score);
                         self.predecessor.insert(neighbor_index, current_index);
                         replay.path_finding_set_predecessor(neighbor_index, current_index);
 
