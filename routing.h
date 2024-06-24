@@ -241,7 +241,7 @@ typedef struct RT_ReplayCallbacks {
     void (*path_finding_set_g_score)(void*, RT_NodeIndex, uint32_t);
     void (*path_finding_push_open_queue)(void*, RT_NodeIndex, uint32_t);
     void (*path_finding_set_predecessor)(void*, RT_NodeIndex, RT_NodeIndex);
-    void (*path_finding_pop_open_queue)(void*);
+    void (*path_finding_pop_open_queue)(void*, RT_NodeIndex);
     void (*path_finding_clear_state)(void*);
     void (*path_finding_insert_path_node)(void*, size_t, RT_NodeIndex);
     void (*path_finding_remove_path_node)(void*, size_t);
