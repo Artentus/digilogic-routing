@@ -230,6 +230,29 @@ typedef struct RT_MutSlice_NetView {
     size_t len;
 } RT_MutSlice_NetView;
 
+typedef struct RT_Slice_NodeIndex {
+    const RT_NodeIndex *ptr;
+    size_t len;
+} RT_Slice_NodeIndex;
+
+typedef struct RT_ReplayCallbacks {
+    void *context;
+    void (*begin_path_finding)(void*, RT_NodeIndex, struct RT_Slice_NodeIndex, bool);
+    void (*path_finding_set_g_score)(void*, RT_NodeIndex, uint32_t);
+    void (*path_finding_push_open_queue)(void*, RT_NodeIndex, uint32_t);
+    void (*path_finding_set_predecessor)(void*, RT_NodeIndex, RT_NodeIndex);
+    void (*path_finding_pop_open_queue)(void*);
+    void (*path_finding_clear_state)(void*);
+    void (*path_finding_insert_path_node)(void*, size_t, RT_NodeIndex);
+    void (*path_finding_remove_path_node)(void*, size_t);
+    void (*end_path_finding)(void*, bool);
+    void (*routing_begin_root_wire)(void*, struct RT_Point, struct RT_Point);
+    void (*routing_begin_branch_wire)(void*, struct RT_Point);
+    void (*routing_push_vertex)(void*, struct RT_Vertex);
+    void (*routing_end_wire_segment)(void*, bool);
+    void (*routing_end_wire)(void*);
+} RT_ReplayCallbacks;
+
 #define RT_INVALID_NODE_INDEX UINT32_MAX
 
 #define RT_INVALID_BOUNDING_BOX_INDEX UINT32_MAX
@@ -418,5 +441,38 @@ RT_Result RT_graph_connect_nets(const struct RT_Graph *graph,
                                 struct RT_MutSlice_WireView wire_views,
                                 struct RT_MutSlice_NetView net_views,
                                 bool perform_centering);
+
+/**
+ * Connects nets in a graph.
+ *
+ * **Parameters**
+ * `graph`: The graph to connect the nets in.
+ * `nets`: A list of nets to connect.
+ * `endpoints`: A list of endpoints.
+ * `waypoints`: A list of waypoints.
+ * `vertices`: A list to write the found vertices into.
+ * `wire_views`: A list to write the found wires into.
+ * `net_views`: A list to write the found nets into.
+ * `replay`: Callbacks for constructing a replay.
+ *
+ * **Returns**
+ * `RT_RESULT_SUCCESS`: The operation completed successfully.
+ * `RT_RESULT_NULL_POINTER_ERROR`: `graph`, `nets.ptr`, `endpoints.ptr`, `waypoints.ptr`, `vertices.ptr`, `wire_views.ptr` or `net_views.ptr` was `NULL`.
+ * `RT_RESULT_INVALID_OPERATION_ERROR`: One of the paths had an invalid start or end point.
+ * `RT_RESULT_VERTEX_BUFFER_OVERFLOW_ERROR`: The capacity of `vertices` was too small to hold all vertices.
+ * `RT_RESULT_WIRE_VIEW_BUFFER_OVERFLOW_ERROR`: The capacity of `wire_views` was too small to hold all wire views.
+ * `RT_RESULT_UNINITIALIZED_ERROR`: The thread pool has not been initialized yet.
+ * `RT_RESULT_INVALID_ARGUMENT_ERROR`: `nets.len` was not equal to `net_views.len` or a net contained fewer than 2 endpoints.
+ */
+RT_MUST_USE
+RT_Result RT_graph_connect_nets_replay(const struct RT_Graph *graph,
+                                       struct RT_Slice_Net nets,
+                                       struct RT_Slice_Endpoint endpoints,
+                                       struct RT_Slice_Point waypoints,
+                                       struct RT_MutSlice_Vertex vertices,
+                                       struct RT_MutSlice_WireView wire_views,
+                                       struct RT_MutSlice_NetView net_views,
+                                       bool perform_centering,
+                                       struct RT_ReplayCallbacks replay);
 
 #endif /* ROUTING_H */

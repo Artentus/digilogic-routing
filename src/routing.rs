@@ -162,6 +162,7 @@ fn push_vertices(
     vertices: &mut Array<Vertex>,
     ends: &mut Vec<Point>,
     centering_candidates: &mut Vec<CenteringCandidate>,
+    replay: &mut impl ReplayCapture,
 ) -> Result<usize, ()> {
     ends.reserve(path.nodes().len());
     for node in path.nodes() {
@@ -187,6 +188,7 @@ fn push_vertices(
             }
 
             vertices.push(prev_node.position.into())?;
+            replay.routing_push_vertex(prev_node.position.into());
             path_len += 1;
         }
 
@@ -196,6 +198,7 @@ fn push_vertices(
 
     if let Some(prev_node) = prev_node {
         vertices.push(prev_node.position.into())?;
+        replay.routing_push_vertex(prev_node.position.into());
         path_len += 1;
     }
 
@@ -222,10 +225,12 @@ fn push_fallback_vertices(
     end: Point,
     start_dirs: Directions,
     vertices: &mut Array<Vertex>,
+    replay: &mut impl ReplayCapture,
 ) -> Result<(usize, Direction), ()> {
     let mut path_len = 0usize;
 
     vertices.push(start.into())?;
+    replay.routing_push_vertex(start.into());
     path_len += 1;
 
     let (middle, dir) = if start_dirs.intersects(Directions::X) {
@@ -258,10 +263,12 @@ fn push_fallback_vertices(
 
     if (middle != start) && (middle != end) {
         vertices.push(middle.into())?;
+        replay.routing_push_vertex(middle.into());
         path_len += 1;
     }
 
     vertices.push(end.into())?;
+    replay.routing_push_vertex(end.into());
     path_len += 1;
 
     Ok((path_len, dir))
@@ -284,7 +291,10 @@ fn route_root_wire<'a>(
     wire_views: &mut Array<WireView>,
     ends: &mut Vec<Point>,
     centering_candidates: &mut Vec<CenteringCandidate>,
+    replay: &mut impl ReplayCapture,
 ) -> Result<u32, RoutingError> {
+    replay.routing_begin_root_wire(root_start.position, root_end.position);
+
     let mut wire_count = 0;
 
     let waypoints = root_start
@@ -294,10 +304,11 @@ fn route_root_wire<'a>(
         .chain(root_end.waypoints.iter().copied());
 
     let (last_waypoint, last_waypoint_dir) =
-        match path_finder.find_path(graph, root_start.position, None, waypoints, true) {
+        match path_finder.find_path(graph, root_start.position, None, waypoints, true, replay) {
             PathFindResult::Found(path) => {
-                let path_len = push_vertices(path, graph, vertices, ends, centering_candidates)
-                    .map_err(|_| RoutingError::VertexBufferOverflow)?;
+                let path_len =
+                    push_vertices(path, graph, vertices, ends, centering_candidates, replay)
+                        .map_err(|_| RoutingError::VertexBufferOverflow)?;
 
                 if path_len < 2 {
                     (root_start.position, None)
@@ -305,6 +316,7 @@ fn route_root_wire<'a>(
                     wire_views
                         .push(WireView::new(path_len, false, true).expect("path too long"))
                         .map_err(|_| RoutingError::WireViewBufferOverflow)?;
+                    replay.routing_end_wire_segment(false);
 
                     let (last, head) = path.nodes().split_last().unwrap();
                     let prev_last = head.last().unwrap();
@@ -325,9 +337,10 @@ fn route_root_wire<'a>(
         last_waypoint_dir,
         [root_end.position],
         false,
+        replay,
     ) {
         PathFindResult::Found(path) => {
-            push_vertices(path, graph, vertices, ends, centering_candidates)
+            push_vertices(path, graph, vertices, ends, centering_candidates, replay)
                 .map_err(|_| RoutingError::VertexBufferOverflow)?
         }
         PathFindResult::NotFound => {
@@ -342,6 +355,7 @@ fn route_root_wire<'a>(
                 last_waypoint,
                 root_end_node.legal_directions,
                 vertices,
+                replay,
             )
             .map_err(|_| RoutingError::VertexBufferOverflow)?;
 
@@ -358,7 +372,9 @@ fn route_root_wire<'a>(
     wire_views
         .push(WireView::new(path_len, false, true).expect("path too long"))
         .map_err(|_| RoutingError::WireViewBufferOverflow)?;
+    replay.routing_end_wire_segment(false);
 
+    replay.routing_end_wire();
     Ok(wire_count + 1)
 }
 
@@ -468,11 +484,13 @@ fn route_branch_wires<'a>(
     ends: &mut Vec<Point>,
     centering_candidates: &mut Vec<CenteringCandidate>,
     junctions: &mut JunctionMap,
+    replay: &mut impl ReplayCapture,
 ) -> Result<u32, RoutingError> {
     let mut wire_count = 0;
 
     for endpoint in endpoints {
         let endpoint = endpoint.borrow();
+        replay.routing_begin_branch_wire(endpoint.position);
 
         let end_count = ends.len();
         if (endpoint.position != root_start.position) && (endpoint.position != root_end.position) {
@@ -482,10 +500,12 @@ fn route_branch_wires<'a>(
                 None,
                 endpoint.waypoints.iter().copied(),
                 true,
+                replay,
             ) {
                 PathFindResult::Found(path) => {
-                    let path_len = push_vertices(path, graph, vertices, ends, centering_candidates)
-                        .map_err(|_| RoutingError::VertexBufferOverflow)?;
+                    let path_len =
+                        push_vertices(path, graph, vertices, ends, centering_candidates, replay)
+                            .map_err(|_| RoutingError::VertexBufferOverflow)?;
 
                     if path_len < 2 {
                         (endpoint.position, None)
@@ -493,6 +513,7 @@ fn route_branch_wires<'a>(
                         wire_views
                             .push(WireView::new(path_len, false, false).expect("path too long"))
                             .map_err(|_| RoutingError::WireViewBufferOverflow)?;
+                        replay.routing_end_wire_segment(false);
 
                         let (last, head) = path.nodes().split_last().unwrap();
                         let prev_last = head.last().unwrap();
@@ -513,10 +534,12 @@ fn route_branch_wires<'a>(
                 last_waypoint_dir,
                 ends[..end_count].iter().copied(),
                 false,
+                replay,
             ) {
                 PathFindResult::Found(path) => {
-                    let path_len = push_vertices(path, graph, vertices, ends, centering_candidates)
-                        .map_err(|_| RoutingError::VertexBufferOverflow)?;
+                    let path_len =
+                        push_vertices(path, graph, vertices, ends, centering_candidates, replay)
+                            .map_err(|_| RoutingError::VertexBufferOverflow)?;
 
                     if path_len < 2 {
                         if last_waypoint_dir.is_some() {
@@ -550,6 +573,7 @@ fn route_branch_wires<'a>(
                         junction_pos,
                         endpoint_node.legal_directions,
                         vertices,
+                        replay,
                     )
                     .map_err(|_| RoutingError::VertexBufferOverflow)?;
 
@@ -567,11 +591,13 @@ fn route_branch_wires<'a>(
             wire_views
                 .push(WireView::new(path_len, true, false).expect("path too long"))
                 .map_err(|_| RoutingError::WireViewBufferOverflow)?;
+            replay.routing_end_wire_segment(true);
 
             wire_count += 1;
         }
     }
 
+    replay.routing_end_wire();
     Ok(wire_count)
 }
 
@@ -1022,19 +1048,6 @@ pub struct Endpoint<'a> {
     pub waypoints: Cow<'a, [Point]>,
 }
 
-impl<'a> Endpoint<'a> {
-    pub fn borrowed<'this, 'out>(&'this self) -> Endpoint<'out>
-    where
-        'a: 'out,
-        'this: 'out,
-    {
-        Endpoint {
-            position: self.position,
-            waypoints: Cow::Borrowed(self.waypoints.as_ref()),
-        }
-    }
-}
-
 pub(crate) fn connect_net<'a>(
     graph: &Graph,
     endpoints: impl Clone + Iterator<Item: Borrow<Endpoint<'a>>>,
@@ -1047,6 +1060,7 @@ pub(crate) fn connect_net<'a>(
     centering_candidates: &mut Vec<CenteringCandidate>,
     junctions: &mut JunctionMap,
     perform_centering: bool,
+    replay: &mut impl ReplayCapture,
 ) -> Result<(), RoutingError> {
     let path_finder = &mut *graph.path_finder.get_or_default().borrow_mut();
     let (root_start, root_end) =
@@ -1072,6 +1086,7 @@ pub(crate) fn connect_net<'a>(
         wire_views,
         ends,
         centering_candidates,
+        replay,
     )?;
 
     let branch_wire_count = route_branch_wires(
@@ -1085,6 +1100,7 @@ pub(crate) fn connect_net<'a>(
         ends,
         centering_candidates,
         junctions,
+        replay,
     )?;
 
     if perform_centering {

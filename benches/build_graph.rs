@@ -1,6 +1,7 @@
 use criterion::{black_box, criterion_group, criterion_main, Criterion};
 use digilogic_routing::*;
 use rayon::prelude::*;
+use std::borrow::Cow;
 use std::mem::MaybeUninit;
 
 include!("../test_data/graph.rs");
@@ -20,12 +21,12 @@ fn build_graph(c: &mut Criterion) {
 
 #[derive(Default)]
 struct Net {
-    endpoints: Vec<digilogic_routing::Endpoint<Vec<Point>>>,
+    endpoints: Vec<digilogic_routing::Endpoint<'static>>,
 }
 
 fn find_closest_endpoint(
     waypoint: Point,
-    endpoints: &[digilogic_routing::Endpoint<Vec<Point>>],
+    endpoints: &[digilogic_routing::Endpoint<'static>],
 ) -> usize {
     let mut min_dist = 0;
     let mut min_index = 0;
@@ -53,7 +54,7 @@ fn create_nets() -> Vec<Net> {
             .endpoints
             .push(digilogic_routing::Endpoint {
                 position: endpoint.position,
-                waypoints: Vec::new(),
+                waypoints: Cow::Owned(Vec::new()),
             });
     }
 
@@ -61,9 +62,10 @@ fn create_nets() -> Vec<Net> {
         let closest_endpoint =
             find_closest_endpoint(waypoint.position, &nets[waypoint.net_id].endpoints);
 
-        nets[waypoint.net_id].endpoints[closest_endpoint]
-            .waypoints
-            .push(waypoint.position);
+        match &mut nets[waypoint.net_id].endpoints[closest_endpoint].waypoints {
+            Cow::Borrowed(_) => unreachable!(),
+            Cow::Owned(waypoints) => waypoints.push(waypoint.position),
+        }
     }
 
     nets
@@ -81,12 +83,7 @@ fn route(c: &mut Criterion) {
                 let mut wire_views = [MaybeUninit::uninit(); 32];
                 black_box(
                     graph
-                        .connect_net::<[Point]>(
-                            &net.endpoints,
-                            &mut vertices,
-                            &mut wire_views,
-                            true,
-                        )
+                        .connect_net(&net.endpoints, &mut vertices, &mut wire_views, true)
                         .unwrap(),
                 );
             }));

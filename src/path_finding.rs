@@ -1,5 +1,5 @@
 use crate::graph::{Direction, GraphData, NodeIndex, Point, INVALID_NODE_INDEX};
-use crate::{HashMap, HashSet};
+use crate::{HashMap, HashSet, ReplayCapture};
 use std::borrow::Borrow;
 use std::cmp::Reverse;
 
@@ -117,9 +117,17 @@ impl PathFinder {
     #[cfg(not(debug_assertions))]
     fn assert_data_is_valid(&self, _graph: &GraphData) {}
 
-    fn build_path(&mut self, graph: &GraphData, start_index: NodeIndex, end_index: NodeIndex) {
+    fn build_path(
+        &mut self,
+        graph: &GraphData,
+        start_index: NodeIndex,
+        end_index: NodeIndex,
+        replay: &mut impl ReplayCapture,
+    ) {
         // If there was a previous path segment, don't duplicate the joining point.
         if self.path.nodes.len() > 0 {
+            replay.path_finding_remove_path_node(self.path.nodes.len());
+
             let prev_end = self.path.nodes.pop();
             assert!(
                 matches!(
@@ -140,6 +148,8 @@ impl PathFinder {
             kind: PathNodeKind::End,
             bend_direction: None,
         });
+
+        replay.path_finding_insert_path_node(insert_index, end_index);
 
         if end_index == start_index {
             return;
@@ -171,6 +181,8 @@ impl PathFinder {
                     },
                 );
 
+                replay.path_finding_insert_path_node(insert_index, pred_index);
+
                 break;
             } else {
                 self.path.nodes.insert(
@@ -181,6 +193,8 @@ impl PathFinder {
                         bend_direction: Some(dir),
                     },
                 );
+
+                replay.path_finding_insert_path_node(insert_index, pred_index);
 
                 current_index = pred_index;
             }
@@ -195,6 +209,7 @@ impl PathFinder {
         start_straight_dir: Option<Direction>,
         ends: impl IntoIterator<Item = Point>,
         visit_all: bool,
+        replay: &mut impl ReplayCapture,
     ) -> PathFindResult<&'a Path> {
         let Some(mut start_index) = graph.find_node(start) else {
             println!(
@@ -232,12 +247,16 @@ impl PathFinder {
             }
         }
 
+        replay.begin_path_finding(start_index, self.end_indices.iter().copied(), visit_all);
+
         self.g_score.clear();
         self.predecessor.clear();
         self.open_queue.clear();
 
         self.g_score.insert(start_index, 0);
+        replay.path_finding_set_g_score(start_index, 0);
         self.open_queue.push(start_index, Reverse(0));
+        replay.path_finding_push_open_queue(start_index, 0);
 
         'outer: loop {
             if total_neighbor_count == 0 {
@@ -246,6 +265,8 @@ impl PathFinder {
             }
 
             while let Some((current_index, _)) = self.open_queue.pop() {
+                replay.path_finding_pop_open_queue();
+
                 let current_node = &graph.nodes[current_index];
 
                 let pred_index = self.predecessor.get(&current_index).copied();
@@ -253,21 +274,27 @@ impl PathFinder {
                 // Shortest path to one end found, construct it.
                 if self.end_indices.contains(&current_index) {
                     self.assert_data_is_valid(graph);
-                    self.build_path(graph, start_index, current_index);
+                    self.build_path(graph, start_index, current_index, replay);
 
                     if visit_all {
                         self.end_indices.remove(&current_index);
                         total_neighbor_count -= current_node.neighbor_count();
                         start_index = current_index;
 
+                        replay.path_finding_clear_state();
+
                         self.g_score.clear();
                         self.predecessor.clear();
                         self.open_queue.clear();
 
                         self.g_score.insert(start_index, 0);
+                        replay.path_finding_set_g_score(start_index, 0);
                         self.open_queue.push(start_index, Reverse(0));
+                        replay.path_finding_push_open_queue(start_index, 0);
+
                         if let Some(pred_index) = pred_index {
                             self.predecessor.insert(start_index, pred_index);
+                            replay.path_finding_set_predecessor(start_index, pred_index);
                         }
 
                         continue 'outer;
@@ -323,7 +350,9 @@ impl PathFinder {
                     if update {
                         // Shorter path found, update it.
                         self.g_score.insert(neighbor_index, new_g_score);
+                        replay.path_finding_set_g_score(neighbor_index, 0);
                         self.predecessor.insert(neighbor_index, current_index);
+                        replay.path_finding_set_predecessor(neighbor_index, current_index);
 
                         // Calculate the new approximate total cost.
                         let new_f_score = new_g_score
@@ -338,6 +367,7 @@ impl PathFinder {
                                 .expect("empty end point list");
 
                         self.open_queue.push(neighbor_index, Reverse(new_f_score));
+                        replay.path_finding_push_open_queue(neighbor_index, new_f_score);
                     }
                 }
             }
@@ -360,8 +390,10 @@ impl PathFinder {
         }
 
         if self.path.nodes.len() > 0 {
+            replay.end_path_finding(true);
             PathFindResult::Found(&self.path)
         } else {
+            replay.end_path_finding(false);
             PathFindResult::NotFound
         }
     }

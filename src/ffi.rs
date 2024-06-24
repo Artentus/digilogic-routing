@@ -7,7 +7,7 @@ use crate::*;
 use rayon::prelude::*;
 use serde::{Deserialize, Serialize};
 use std::borrow::Cow;
-use std::ffi::{c_char, CStr};
+use std::ffi::{c_char, c_void, CStr};
 use std::fs::File;
 use std::mem::MaybeUninit;
 use std::ops::Range;
@@ -80,6 +80,15 @@ impl<T> Slice<T> {
     }
 }
 
+impl<'a, T> From<&'a [T]> for Slice<T> {
+    fn from(value: &'a [T]) -> Self {
+        Slice {
+            ptr: value.as_ptr(),
+            len: value.len(),
+        }
+    }
+}
+
 #[derive(Debug, Clone, Copy)]
 #[repr(C)]
 pub struct MutSlice<T> {
@@ -142,6 +151,15 @@ impl<T> MutSlice<T> {
             &mut []
         } else {
             unsafe { std::slice::from_raw_parts_mut(self.ptr as _, self.len) }
+        }
+    }
+}
+
+impl<'a, T> From<&'a mut [T]> for MutSlice<T> {
+    fn from(value: &'a mut [T]) -> Self {
+        MutSlice {
+            ptr: value.as_mut_ptr(),
+            len: value.len(),
         }
     }
 }
@@ -667,6 +685,7 @@ pub unsafe extern "C" fn RT_graph_connect_nets(
                 centering_candidates,
                 junctions,
                 perform_centering,
+                &mut NoReplay,
             )
         });
 
@@ -674,4 +693,209 @@ pub unsafe extern "C" fn RT_graph_connect_nets(
         Ok(_) => Result::Success,
         Err(err) => err.into(),
     }
+}
+
+#[repr(C)]
+pub struct ReplayCallbacks {
+    pub context: *mut c_void,
+
+    pub begin_path_finding: extern "C" fn(*mut c_void, NodeIndex, Slice<NodeIndex>, bool),
+    pub path_finding_set_g_score: extern "C" fn(*mut c_void, NodeIndex, u32),
+    pub path_finding_push_open_queue: extern "C" fn(*mut c_void, NodeIndex, u32),
+    pub path_finding_set_predecessor: extern "C" fn(*mut c_void, NodeIndex, NodeIndex),
+    pub path_finding_pop_open_queue: extern "C" fn(*mut c_void),
+    pub path_finding_clear_state: extern "C" fn(*mut c_void),
+    pub path_finding_insert_path_node: extern "C" fn(*mut c_void, usize, NodeIndex),
+    pub path_finding_remove_path_node: extern "C" fn(*mut c_void, usize),
+    pub end_path_finding: extern "C" fn(*mut c_void, bool),
+
+    pub routing_begin_root_wire: extern "C" fn(*mut c_void, Point, Point),
+    pub routing_begin_branch_wire: extern "C" fn(*mut c_void, Point),
+    pub routing_push_vertex: extern "C" fn(*mut c_void, Vertex),
+    pub routing_end_wire_segment: extern "C" fn(*mut c_void, bool),
+    pub routing_end_wire: extern "C" fn(*mut c_void),
+}
+
+impl ReplayCapture for ReplayCallbacks {
+    #[inline]
+    fn begin_path_finding(
+        &mut self,
+        start: NodeIndex,
+        ends: impl Iterator<Item = NodeIndex>,
+        visit_all: bool,
+    ) {
+        let ends: Vec<_> = ends.collect();
+        (self.begin_path_finding)(self.context, start, ends.as_slice().into(), visit_all);
+    }
+
+    #[inline]
+    fn path_finding_set_g_score(&mut self, node: NodeIndex, g_score: u32) {
+        (self.path_finding_set_g_score)(self.context, node, g_score);
+    }
+
+    #[inline]
+    fn path_finding_push_open_queue(&mut self, node: NodeIndex, f_score: u32) {
+        (self.path_finding_push_open_queue)(self.context, node, f_score);
+    }
+
+    #[inline]
+    fn path_finding_set_predecessor(&mut self, node: NodeIndex, predecessor: NodeIndex) {
+        (self.path_finding_set_predecessor)(self.context, node, predecessor);
+    }
+
+    #[inline]
+    fn path_finding_pop_open_queue(&mut self) {
+        (self.path_finding_pop_open_queue)(self.context);
+    }
+
+    #[inline]
+    fn path_finding_clear_state(&mut self) {
+        (self.path_finding_clear_state)(self.context);
+    }
+
+    #[inline]
+    fn path_finding_insert_path_node(&mut self, index: usize, node: NodeIndex) {
+        (self.path_finding_insert_path_node)(self.context, index, node);
+    }
+
+    #[inline]
+    fn path_finding_remove_path_node(&mut self, index: usize) {
+        (self.path_finding_remove_path_node)(self.context, index);
+    }
+
+    #[inline]
+    fn end_path_finding(&mut self, found: bool) {
+        (self.end_path_finding)(self.context, found);
+    }
+
+    #[inline]
+    fn routing_begin_root_wire(&mut self, start: Point, end: Point) {
+        (self.routing_begin_root_wire)(self.context, start, end);
+    }
+
+    #[inline]
+    fn routing_begin_branch_wire(&mut self, start: Point) {
+        (self.routing_begin_branch_wire)(self.context, start);
+    }
+
+    #[inline]
+    fn routing_push_vertex(&mut self, vertex: Vertex) {
+        (self.routing_push_vertex)(self.context, vertex);
+    }
+
+    #[inline]
+    fn routing_end_wire_segment(&mut self, ends_in_junction: bool) {
+        (self.routing_end_wire_segment)(self.context, ends_in_junction);
+    }
+
+    #[inline]
+    fn routing_end_wire(&mut self) {
+        (self.routing_end_wire)(self.context);
+    }
+}
+
+/// Connects nets in a graph.
+///
+/// **Parameters**  
+/// `graph`: The graph to connect the nets in.  
+/// `nets`: A list of nets to connect.  
+/// `endpoints`: A list of endpoints.  
+/// `waypoints`: A list of waypoints.  
+/// `vertices`: A list to write the found vertices into.  
+/// `wire_views`: A list to write the found wires into.  
+/// `net_views`: A list to write the found nets into.  
+/// `replay`: Callbacks for constructing a replay.
+///
+/// **Returns**  
+/// `RT_RESULT_SUCCESS`: The operation completed successfully.  
+/// `RT_RESULT_NULL_POINTER_ERROR`: `graph`, `nets.ptr`, `endpoints.ptr`, `waypoints.ptr`, `vertices.ptr`, `wire_views.ptr` or `net_views.ptr` was `NULL`.  
+/// `RT_RESULT_INVALID_OPERATION_ERROR`: One of the paths had an invalid start or end point.  
+/// `RT_RESULT_VERTEX_BUFFER_OVERFLOW_ERROR`: The capacity of `vertices` was too small to hold all vertices.  
+/// `RT_RESULT_WIRE_VIEW_BUFFER_OVERFLOW_ERROR`: The capacity of `wire_views` was too small to hold all wire views.  
+/// `RT_RESULT_UNINITIALIZED_ERROR`: The thread pool has not been initialized yet.  
+/// `RT_RESULT_INVALID_ARGUMENT_ERROR`: `nets.len` was not equal to `net_views.len` or a net contained fewer than 2 endpoints.
+#[no_mangle]
+#[must_use]
+pub unsafe extern "C" fn RT_graph_connect_nets_replay(
+    graph: *const Graph,
+    nets: Slice<Net>,
+    endpoints: Slice<Endpoint>,
+    waypoints: Slice<Point>,
+    mut vertices: MutSlice<Vertex>,
+    mut wire_views: MutSlice<WireView>,
+    mut net_views: MutSlice<NetView>,
+    perform_centering: bool,
+    mut replay: ReplayCallbacks,
+) -> Result {
+    let num_cpus = NUM_CPUS.load(Ordering::Acquire);
+    if num_cpus == 0 {
+        return Result::UninitializedError;
+    }
+    assert_eq!(num_cpus as usize, rayon::current_num_threads());
+
+    if graph.is_null()
+        || nets.is_null()
+        || endpoints.is_null()
+        || waypoints.is_null()
+        || vertices.is_null()
+        || wire_views.is_null()
+        || net_views.is_null()
+    {
+        return Result::NullPointerError;
+    }
+
+    if nets.len != net_views.len {
+        return Result::InvalidArgumentError;
+    }
+
+    let graph = unsafe { &*graph };
+    let nets = unsafe { nets.as_ref() };
+    let endpoints = unsafe { endpoints.as_ref() };
+    let waypoints = unsafe { waypoints.as_ref() };
+    let net_views = unsafe { net_views.as_uninit_mut() };
+
+    let mut vertices = unsafe { vertices.as_uninit_mut().into() };
+    let mut wire_views = unsafe { wire_views.as_uninit_mut().into() };
+    let mut ends = Vec::new();
+    let mut centering_candidates = Vec::new();
+    let mut junctions = JunctionMap::default();
+
+    for (net, net_view) in nets.iter().zip(net_views.iter_mut()) {
+        let endpoint_start = net.endpoint_offset as usize;
+        let endpoint_end = endpoint_start + (net.endpoint_count as usize);
+        let endpoints = &endpoints[endpoint_start..endpoint_end];
+
+        let endpoints = endpoints.iter().map(|endpoint| {
+            let waypoint_start = endpoint.waypoint_offset as usize;
+            let waypoint_end = waypoint_start + (endpoint.waypoint_count as usize);
+            let waypoints = &waypoints[waypoint_start..waypoint_end];
+
+            routing::Endpoint {
+                position: endpoint.position,
+                waypoints: Cow::Borrowed(waypoints),
+            }
+        });
+
+        let result = routing::connect_net(
+            graph,
+            endpoints,
+            0,
+            0,
+            &mut vertices,
+            &mut wire_views,
+            net_view,
+            &mut ends,
+            &mut centering_candidates,
+            &mut junctions,
+            perform_centering,
+            &mut replay,
+        );
+
+        match result {
+            Ok(_) => (),
+            Err(err) => return err.into(),
+        }
+    }
+
+    Result::Success
 }

@@ -1,5 +1,7 @@
 #![allow(unsafe_code)]
 
+use std::ffi::c_void;
+
 use crate::ffi::*;
 use crate::*;
 
@@ -32,23 +34,32 @@ fn init() -> usize {
     thread_count as usize
 }
 
-impl<'a, T> From<&'a [T]> for Slice<T> {
-    fn from(value: &'a [T]) -> Self {
-        Slice {
-            ptr: value.as_ptr(),
-            len: value.len(),
-        }
-    }
+extern "C" fn begin_path_finding(
+    _: *mut c_void,
+    _: graph::NodeIndex,
+    _: Slice<graph::NodeIndex>,
+    _: bool,
+) {
 }
+extern "C" fn path_finding_set_g_score(_: *mut c_void, _: graph::NodeIndex, _: u32) {}
+extern "C" fn path_finding_push_open_queue(_: *mut c_void, _: graph::NodeIndex, _: u32) {}
+extern "C" fn path_finding_set_predecessor(
+    _: *mut c_void,
+    _: graph::NodeIndex,
+    _: graph::NodeIndex,
+) {
+}
+extern "C" fn path_finding_pop_open_queue(_: *mut c_void) {}
+extern "C" fn path_finding_clear_state(_: *mut c_void) {}
+extern "C" fn path_finding_insert_path_node(_: *mut c_void, _: usize, _: graph::NodeIndex) {}
+extern "C" fn path_finding_remove_path_node(_: *mut c_void, _: usize) {}
+extern "C" fn end_path_finding(_: *mut c_void, _: bool) {}
 
-impl<'a, T> From<&'a mut [T]> for MutSlice<T> {
-    fn from(value: &'a mut [T]) -> Self {
-        MutSlice {
-            ptr: value.as_mut_ptr(),
-            len: value.len(),
-        }
-    }
-}
+extern "C" fn routing_begin_root_wire(_: *mut c_void, _: Point, _: Point) {}
+extern "C" fn routing_begin_branch_wire(_: *mut c_void, _: Point) {}
+extern "C" fn routing_push_vertex(_: *mut c_void, _: Vertex) {}
+extern "C" fn routing_end_wire_segment(_: *mut c_void, _: bool) {}
+extern "C" fn routing_end_wire(_: *mut c_void) {}
 
 fn test_impl(graph: &Graph, net_points: [Point; 2], expected: &[Vertex]) {
     let thread_count = init();
@@ -75,8 +86,28 @@ fn test_impl(graph: &Graph, net_points: [Point; 2], expected: &[Vertex]) {
     let mut wire_views = vec![WireView::default(); thread_count];
     let mut net_views = vec![NetView::default(); 1];
 
+    let replay = ReplayCallbacks {
+        context: std::ptr::null_mut(),
+
+        begin_path_finding: begin_path_finding,
+        path_finding_set_g_score: path_finding_set_g_score,
+        path_finding_push_open_queue: path_finding_push_open_queue,
+        path_finding_set_predecessor: path_finding_set_predecessor,
+        path_finding_pop_open_queue: path_finding_pop_open_queue,
+        path_finding_clear_state: path_finding_clear_state,
+        path_finding_insert_path_node: path_finding_insert_path_node,
+        path_finding_remove_path_node: path_finding_remove_path_node,
+        end_path_finding: end_path_finding,
+
+        routing_begin_root_wire: routing_begin_root_wire,
+        routing_begin_branch_wire: routing_begin_branch_wire,
+        routing_push_vertex: routing_push_vertex,
+        routing_end_wire_segment: routing_end_wire_segment,
+        routing_end_wire: routing_end_wire,
+    };
+
     let result = unsafe {
-        RT_graph_connect_nets(
+        RT_graph_connect_nets_replay(
             graph as *const _,
             nets.as_slice().into(),
             endpoints.as_slice().into(),
@@ -85,6 +116,7 @@ fn test_impl(graph: &Graph, net_points: [Point; 2], expected: &[Vertex]) {
             wire_views.as_mut_slice().into(),
             net_views.as_mut_slice().into(),
             true,
+            replay,
         )
     };
 
