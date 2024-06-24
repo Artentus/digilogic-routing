@@ -265,7 +265,7 @@ impl PathFinder {
             }
 
             while let Some((current_index, _)) = self.open_queue.pop() {
-                replay.path_finding_pop_open_queue();
+                replay.path_finding_pop_open_queue(current_index);
 
                 let current_node = &graph.nodes[current_index];
 

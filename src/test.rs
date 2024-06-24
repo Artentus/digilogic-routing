@@ -49,7 +49,7 @@ extern "C" fn path_finding_set_predecessor(
     _: graph::NodeIndex,
 ) {
 }
-extern "C" fn path_finding_pop_open_queue(_: *mut c_void) {}
+extern "C" fn path_finding_pop_open_queue(_: *mut c_void, _: graph::NodeIndex) {}
 extern "C" fn path_finding_clear_state(_: *mut c_void) {}
 extern "C" fn path_finding_insert_path_node(_: *mut c_void, _: usize, _: graph::NodeIndex) {}
 extern "C" fn path_finding_remove_path_node(_: *mut c_void, _: usize) {}

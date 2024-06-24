@@ -703,7 +703,7 @@ pub struct ReplayCallbacks {
     pub path_finding_set_g_score: extern "C" fn(*mut c_void, NodeIndex, u32),
     pub path_finding_push_open_queue: extern "C" fn(*mut c_void, NodeIndex, u32),
     pub path_finding_set_predecessor: extern "C" fn(*mut c_void, NodeIndex, NodeIndex),
-    pub path_finding_pop_open_queue: extern "C" fn(*mut c_void),
+    pub path_finding_pop_open_queue: extern "C" fn(*mut c_void, NodeIndex),
     pub path_finding_clear_state: extern "C" fn(*mut c_void),
     pub path_finding_insert_path_node: extern "C" fn(*mut c_void, usize, NodeIndex),
     pub path_finding_remove_path_node: extern "C" fn(*mut c_void, usize),
@@ -744,8 +744,8 @@ impl ReplayCapture for ReplayCallbacks {
     }
 
     #[inline]
-    fn path_finding_pop_open_queue(&mut self) {
-        (self.path_finding_pop_open_queue)(self.context);
+    fn path_finding_pop_open_queue(&mut self, node: NodeIndex) {
+        (self.path_finding_pop_open_queue)(self.context, node);
     }
 
     #[inline]

@@ -37,7 +37,7 @@ pub trait ReplayCapture {
         node: graph::NodeIndex,
         predecessor: graph::NodeIndex,
     );
-    fn path_finding_pop_open_queue(&mut self);
+    fn path_finding_pop_open_queue(&mut self, node: graph::NodeIndex);
     fn path_finding_clear_state(&mut self);
     fn path_finding_insert_path_node(&mut self, index: usize, node: graph::NodeIndex);
     fn path_finding_remove_path_node(&mut self, index: usize);
@@ -63,7 +63,7 @@ impl ReplayCapture for NoReplay {
     fn path_finding_set_g_score(&mut self, _: graph::NodeIndex, _: u32) {}
     fn path_finding_push_open_queue(&mut self, _: graph::NodeIndex, _: u32) {}
     fn path_finding_set_predecessor(&mut self, _: graph::NodeIndex, _: graph::NodeIndex) {}
-    fn path_finding_pop_open_queue(&mut self) {}
+    fn path_finding_pop_open_queue(&mut self, _: graph::NodeIndex) {}
     fn path_finding_clear_state(&mut self) {}
     fn path_finding_insert_path_node(&mut self, _: usize, _: graph::NodeIndex) {}
     fn path_finding_remove_path_node(&mut self, _: usize) {}
