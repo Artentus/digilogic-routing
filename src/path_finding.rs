@@ -126,7 +126,7 @@ impl PathFinder {
     ) {
         // If there was a previous path segment, don't duplicate the joining point.
         if self.path.nodes.len() > 0 {
-            replay.path_finding_remove_path_node(self.path.nodes.len());
+            replay.path_finding_remove_path_node(self.path.nodes.len() - 1);
 
             let prev_end = self.path.nodes.pop();
             assert!(
