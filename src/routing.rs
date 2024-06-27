@@ -176,7 +176,8 @@ fn push_vertices(
         if let Some(prev_node) = prev_node {
             if (prev_node.kind == PathNodeKind::Normal)
                 && (node.kind == PathNodeKind::Normal)
-                && (prev_prev_dir != Some(node.bend_direction.map(Direction::opposite)))
+                && (prev_prev_dir == Some(node.bend_direction))
+                && (prev_node.bend_direction != node.bend_direction)
             {
                 centering_candidates.push(CenteringCandidate {
                     node_a: graph
@@ -306,13 +307,15 @@ fn route_root_wire<'a>(
     let (last_waypoint, last_waypoint_dir) =
         match path_finder.find_path(graph, root_start.position, None, waypoints, true, replay) {
             PathFindResult::Found(path) => {
-                let path_len =
-                    push_vertices(path, graph, vertices, ends, centering_candidates, replay)
-                        .map_err(|_| RoutingError::VertexBufferOverflow)?;
-
-                if path_len < 2 {
+                if path.nodes().len() < 2 {
                     (root_start.position, None)
                 } else {
+                    let path_len =
+                        push_vertices(path, graph, vertices, ends, centering_candidates, replay)
+                            .map_err(|_| RoutingError::VertexBufferOverflow)?;
+
+                    assert!(path_len >= 2);
+
                     wire_views
                         .push(WireView::new(path_len, false, true).expect("path too long"))
                         .map_err(|_| RoutingError::WireViewBufferOverflow)?;
@@ -490,10 +493,12 @@ fn route_branch_wires<'a>(
 
     for endpoint in endpoints {
         let endpoint = endpoint.borrow();
-        replay.routing_begin_branch_wire(endpoint.position);
 
-        let end_count = ends.len();
         if (endpoint.position != root_start.position) && (endpoint.position != root_end.position) {
+            replay.routing_begin_branch_wire(endpoint.position);
+
+            let end_count = ends.len();
+
             let (last_waypoint, last_waypoint_dir) = match path_finder.find_path(
                 graph,
                 endpoint.position,
@@ -503,13 +508,21 @@ fn route_branch_wires<'a>(
                 replay,
             ) {
                 PathFindResult::Found(path) => {
-                    let path_len =
-                        push_vertices(path, graph, vertices, ends, centering_candidates, replay)
-                            .map_err(|_| RoutingError::VertexBufferOverflow)?;
-
-                    if path_len < 2 {
+                    if path.nodes().len() < 2 {
                         (endpoint.position, None)
                     } else {
+                        let path_len = push_vertices(
+                            path,
+                            graph,
+                            vertices,
+                            ends,
+                            centering_candidates,
+                            replay,
+                        )
+                        .map_err(|_| RoutingError::VertexBufferOverflow)?;
+
+                        assert!(path_len >= 2);
+
                         wire_views
                             .push(WireView::new(path_len, false, false).expect("path too long"))
                             .map_err(|_| RoutingError::WireViewBufferOverflow)?;
@@ -537,17 +550,19 @@ fn route_branch_wires<'a>(
                 replay,
             ) {
                 PathFindResult::Found(path) => {
-                    let path_len =
-                        push_vertices(path, graph, vertices, ends, centering_candidates, replay)
-                            .map_err(|_| RoutingError::VertexBufferOverflow)?;
-
-                    if path_len < 2 {
+                    if path.nodes().len() < 2 {
                         if last_waypoint_dir.is_some() {
                             wire_views.last_mut().unwrap().set_ends_in_junction();
                         }
 
                         continue;
                     }
+
+                    let path_len =
+                        push_vertices(path, graph, vertices, ends, centering_candidates, replay)
+                            .map_err(|_| RoutingError::VertexBufferOverflow)?;
+
+                    assert!(path_len >= 2);
 
                     let (last, head) = path.nodes().split_last().unwrap();
                     let prev_last = head.last().unwrap();
